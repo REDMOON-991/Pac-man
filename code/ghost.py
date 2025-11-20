@@ -26,10 +26,10 @@ class Ghost:
 
         if in_house:
             if self.delay > 0:
-                self.current_ai_mode = "WAITING"
+                self.current_ai_mode = MODE_WAITING 
                 self.direction = (0, -0.5) # 等待時稍微上下浮動的初始速度
             else:
-                self.current_ai_mode = "EXIT_HOUSE"
+                self.current_ai_mode = MODE_EXIT_HOUSE 
                 self.direction = (0, -1)
         else:
             self.current_ai_mode = ai_mode
@@ -62,7 +62,7 @@ class Ghost:
         print("一隻鬼被吃掉了！")
         self.is_frightened = False
         self.is_eaten = True
-        self.current_ai_mode = "GO_HOME"
+        self.current_ai_mode = MODE_GO_HOME
         self.speed = 2*SPEED 
         self.target = self.home_pos 
         center_offset = TILE_SIZE // 2
@@ -80,7 +80,7 @@ class Ghost:
     def respawn(self):
         print("一隻鬼重生了！準備出門")
         self.is_eaten = False
-        self.current_ai_mode = "EXIT_HOUSE"
+        self.current_ai_mode = MODE_EXIT_HOUSE 
         self.speed = self.default_speed
         self.pixel_x = (self.home_pos[0] * TILE_SIZE) + (TILE_SIZE // 2)
         self.pixel_y = (self.home_pos[1] * TILE_SIZE) + (TILE_SIZE // 2)
@@ -92,15 +92,15 @@ class Ghost:
         # 不管位置 一律變成驚嚇狀態
         self.is_frightened = True
         #但是在家的AI模式不變
-        if self.current_ai_mode not in ["GO_HOME", "EXIT_HOUSE", "WAITING"]:
-            self.current_ai_mode = "FRIGHTENED"
+        if self.current_ai_mode not in [MODE_GO_HOME, MODE_EXIT_HOUSE , MODE_WAITING ]:
+            self.current_ai_mode = MODE_FRIGHTENED
             self.speed = 1
             self.direction = (self.direction[0] * -1, self.direction[1] * -1)
 
     def end_frightened(self):
         if self.is_frightened:
             self.is_frightened = False
-            if self.current_ai_mode not in ["GO_HOME", "EXIT_HOUSE", "WAITING"]:
+            if self.current_ai_mode not in [MODE_GO_HOME, MODE_EXIT_HOUSE , MODE_WAITING ]:
                 self.current_ai_mode = self.ai_mode
             #self.speed = self.default_speed
 
@@ -114,7 +114,7 @@ class Ghost:
         
         for move_dir in self.all_directions:
             # 某些模式下不能回頭
-            no_rev = (self.current_ai_mode != "WAITING" )
+            no_rev = (self.current_ai_mode != MODE_WAITING  )
             if no_rev and move_dir == reverse_dir:
                 continue
 
@@ -126,18 +126,18 @@ class Ghost:
                 tile = game_map[next_g_y][check_x]
                 
                 # 門的通行邏輯
-                if tile == "W":
+                if tile == TILE_WALL :
                     continue # 牆壁不能過
-                elif tile == "=":
+                elif tile == TILE_DOOR:
                     # 只有出門或回家(死掉)模式可以過門
-                    if self.current_ai_mode not in ["EXIT_HOUSE", "GO_HOME"]:
+                    if self.current_ai_mode not in [MODE_EXIT_HOUSE , MODE_GO_HOME]:
                         continue
 
                 # 鬼重疊檢查 (等待中或出門中的鬼不視為障礙)
                 is_blocked_by_ghost = False
-                if self.current_ai_mode not in ["EXIT_HOUSE", "GO_HOME", "WAITING"]:
+                if self.current_ai_mode not in [MODE_EXIT_HOUSE , MODE_GO_HOME, MODE_WAITING ]:
                     for ghost in others:
-                        if ghost is not self and ghost.current_ai_mode not in ["EXIT_HOUSE", "GO_HOME", "WAITING"]:
+                        if ghost is not self and ghost.current_ai_mode not in [MODE_EXIT_HOUSE , MODE_GO_HOME, MODE_WAITING ]:
                             if ghost.grid_x == next_g_x and ghost.grid_y == next_g_y:
                                 is_blocked_by_ghost = True
                                 break
@@ -155,19 +155,19 @@ class Ghost:
 
     def update(self, game_map, player, all_ghosts, dt, global_ghost_mode, blinky_tile=None):
         # 只有在非特殊狀態 (非回家、非出門、非驚嚇、非被吃) 時才判斷
-        valid_to_switch = (self.current_ai_mode not in ["GO_HOME", "EXIT_HOUSE", "WAITING"] 
+        valid_to_switch = (self.current_ai_mode not in [MODE_GO_HOME, MODE_EXIT_HOUSE , MODE_WAITING ] 
                            and not self.is_frightened 
                            and not self.is_eaten)
 
         if valid_to_switch:
             # 情況 A: 全域變成 SCATTER，但我還在 CHASE
             # 解法: 立即切換並反向 (經典 Pac-Man 規則：進攻轉撤退要立刻反應)
-            if global_ghost_mode == "SCATTER" and self.current_ai_mode != "SCATTER":
-                self.current_ai_mode = "SCATTER"
+            if global_ghost_mode == MODE_SCATTER and self.current_ai_mode != MODE_SCATTER:
+                self.current_ai_mode = MODE_SCATTER
                 self.direction = (self.direction[0] * -1, self.direction[1] * -1)
         
         # 處理 WAITING 狀態
-        if self.current_ai_mode == "WAITING":
+        if self.current_ai_mode == MODE_WAITING :
             # 如果現在是驚嚇模式，就暫停倒數，直接 return 
             # 因為我們在 start_frightened 裡有設定 "就算在家也會變 is_frightened=True"
             if self.is_frightened:
@@ -184,7 +184,7 @@ class Ghost:
             self.delay -= dt
             # 檢查時間是否到了
             if self.delay <= 0:
-                self.current_ai_mode = "EXIT_HOUSE"
+                self.current_ai_mode = MODE_EXIT_HOUSE 
                 self.direction = (0, -1) # 往上衝
                 # 修正位置到格子中心，確保出門路徑準確
                 self.pixel_x = (self.home_pos[0] * TILE_SIZE) + (TILE_SIZE // 2)
@@ -217,16 +217,16 @@ class Ghost:
             self.grid_y = (self.pixel_y - (TILE_SIZE // 2)) // TILE_SIZE
 
 
-            if self.current_ai_mode == "GO_HOME" and (self.grid_x, self.grid_y) == self.home_pos:
+            if self.current_ai_mode == MODE_GO_HOME and (self.grid_x, self.grid_y) == self.home_pos:
                 self.respawn()
 
-            if self.current_ai_mode == "EXIT_HOUSE":
+            if self.current_ai_mode == MODE_EXIT_HOUSE :
                 # 如果 Y 座標小於等於 11 (門在 12)，代表已經出去了
                 if self.grid_y <= 11:
                     self.current_ai_mode = self.ai_mode # 切換回正常追蹤模式
                     self.direction = random.choice([(-1, 0), (1, 0)])    #隨機往左往右
 
-            if not self.is_frightened and self.current_ai_mode not in ["GO_HOME", "EXIT_HOUSE", "WAITING"]:
+            if not self.is_frightened and self.current_ai_mode not in [MODE_GO_HOME, MODE_EXIT_HOUSE , MODE_WAITING ]:
                 self.speed = self.default_speed
 
             valid_directions = self.get_valid_directions(game_map, all_ghosts)
@@ -239,11 +239,11 @@ class Ghost:
             
             # *設定AI模式
             # 共通模式 離家 回家 驚嚇
-            if self.current_ai_mode == "EXIT_HOUSE": self.target = (13.5, 10) 
-            elif self.current_ai_mode == "FRIGHTENED": self.target = (player.grid_x, player.grid_y)
-            elif self.current_ai_mode == "GO_HOME": self.target = self.home_pos
+            if self.current_ai_mode == MODE_EXIT_HOUSE : self.target = (13.5, 10) 
+            elif self.current_ai_mode == MODE_FRIGHTENED: self.target = (player.grid_x, player.grid_y)
+            elif self.current_ai_mode == MODE_GO_HOME: self.target = self.home_pos
             # 散開模式
-            elif self.current_ai_mode == "SCATTER":
+            elif self.current_ai_mode == MODE_SCATTER:
                 current_target_point = self.scatter_path[self.scatter_index]
                 # 檢查是否抵達當前路徑點
                 if (self.grid_x, self.grid_y) == current_target_point:
@@ -254,7 +254,7 @@ class Ghost:
                         self.scatter_index = 0 # 歸零，準備下一圈
                         
                         # 【關鍵】：只有在這個瞬間，才檢查是否該切換去追人
-                        if global_ghost_mode == "CHASE":
+                        if global_ghost_mode == MODE_CHASE:
                             self.current_ai_mode = self.ai_mode # 切換回原本的追逐個性
                             # 這裡不需要反向，因為是順勢切換
                             print(f"{self.color} 繞行結束，開始追逐！")
@@ -262,19 +262,19 @@ class Ghost:
                 self.target = self.scatter_path[self.scatter_index]
             # 四個鬼的獨立AI模式
             # PINKY 追著玩家
-            elif self.current_ai_mode == "CHASE_BLINKY": self.target = (player.grid_x, player.grid_y)
+            elif self.current_ai_mode == AI_CHASE_BLINKY: self.target = (player.grid_x, player.grid_y)
             # BLINKY 預測玩家未來的位置 追那裡
             #? 如果超出、是牆壁的話要怎麼追
-            elif self.current_ai_mode == "CHASE_PINKY":
+            elif self.current_ai_mode == AI_CHASE_PINKY:
                 if player_stopped: self.target = (player.grid_x, player.grid_y)
                 else: self.target = (player.grid_x + (player_dir_x * 4), player.grid_y + (player_dir_y * 4))
             # CLYDE 裝忙 快追到就跑
-            elif self.current_ai_mode == "CHASE_CLYDE":
+            elif self.current_ai_mode == AI_CHASE_CLYDE:
                 distance = self.get_distance((self.grid_x, self.grid_y), (player.grid_x, player.grid_y))
                 if distance > 8: self.target = (player.grid_x, player.grid_y)
                 else: self.target = self.scatter_path[0]
             # INKY 由blinky和玩家的位置決定要怎麼追
-            elif self.current_ai_mode == "CHASE_INKY":
+            elif self.current_ai_mode == AI_CHASE_INKY:
                 if blinky_tile is None or player_stopped: self.target = (player.grid_x, player.grid_y)
                 else:
                     trigger_x = player.grid_x + (player_dir_x * 2)
@@ -286,7 +286,7 @@ class Ghost:
             # 走遍他所能允許的方向
             if self.target and valid_directions:
                 best_direction = (0, 0)
-                if self.current_ai_mode == "FRIGHTENED":
+                if self.current_ai_mode == MODE_FRIGHTENED:
                     best_distance = float('-inf')
                 else:
                     best_distance = float('inf')
@@ -297,7 +297,7 @@ class Ghost:
                     dist = self.get_distance((next_g_x, next_g_y), self.target)
                     
                     # 驚嚇模式 要選擇能有多遠就多遠
-                    if self.current_ai_mode == "FRIGHTENED":
+                    if self.current_ai_mode == MODE_FRIGHTENED:
                         if dist > best_distance:
                             best_distance = dist; best_direction = direction
                     # 追逐模式 要選擇能有多近就多近

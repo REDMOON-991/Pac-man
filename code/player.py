@@ -44,18 +44,18 @@ class Player:
         # 加入邊界檢查，防止吃豆子時也報錯
         if 0 <= curr_grid_y < len(game_map) and 0 <= curr_grid_x < len(game_map[0]):
             current_tile = game_map[curr_grid_y][curr_grid_x]
-            if current_tile == ".":
-                game_map[curr_grid_y][curr_grid_x] = " "
-                return "ATE_PELLET"
-            elif current_tile == "O":
-                game_map[curr_grid_y][curr_grid_x] = " "
-                return "ATE_POWER_PELLET"
+            if current_tile == TILE_PELLET:
+                game_map[curr_grid_y][curr_grid_x] = TILE_EMPTY
+                return EVENT_ATE_PELLET
+            elif current_tile == TILE_POWER_PELLET:
+                game_map[curr_grid_y][curr_grid_x] = TILE_EMPTY
+                return EVENT_ATE_POWER_PELLET
 
         # 牆壁判別
         def is_wall(gx, gy):
             if 0 <= gy < len(game_map) and 0 <= gx < len(game_map[0]):
                 tile = game_map[gy][gx]
-                return tile == "W" or tile == "="
+                return tile == TILE_WALL  or tile == TILE_DOOR
             return False
 
         # 轉彎邏輯 (分軸檢查) 
