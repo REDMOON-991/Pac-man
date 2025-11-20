@@ -113,7 +113,7 @@ class Ghost:
         
         for move_dir in self.all_directions:
             # 某些模式下不能回頭
-            no_rev = (self.current_ai_mode.startswith("CHASE_") or self.current_ai_mode == "GO_HOME" or self.current_ai_mode == "SCATTER")
+            no_rev = (self.current_ai_mode is not "WAITING" )
             if no_rev and move_dir == reverse_dir:
                 continue
 
@@ -152,7 +152,19 @@ class Ghost:
 
         return valid_moves
 
-    def update(self, game_map, player, all_ghosts, dt, blinky_tile=None):
+    def update(self, game_map, player, all_ghosts, dt, global_ghost_mode, blinky_tile=None):
+        # 只有在非特殊狀態 (非回家、非出門、非驚嚇、非被吃) 時才判斷
+        valid_to_switch = (self.current_ai_mode not in ["GO_HOME", "EXIT_HOUSE", "WAITING"] 
+                           and not self.is_frightened 
+                           and not self.is_eaten)
+
+        if valid_to_switch:
+            # 情況 A: 全域變成 SCATTER，但我還在 CHASE
+            # 解法: 立即切換並反向 (經典 Pac-Man 規則：進攻轉撤退要立刻反應)
+            if global_ghost_mode == "SCATTER" and self.current_ai_mode != "SCATTER":
+                self.current_ai_mode = "SCATTER"
+                self.direction = (self.direction[0] * -1, self.direction[1] * -1)
+        
         # 處理 WAITING 狀態
         if self.current_ai_mode == "WAITING":
             # 如果現在是驚嚇模式，就暫停倒數，直接 return 
@@ -224,7 +236,7 @@ class Ghost:
             
             self.target = (player.grid_x, player.grid_y)
             
-            # 設定AI模式
+            # *設定AI模式
             # 共通模式 離家 回家 驚嚇
             if self.current_ai_mode == "EXIT_HOUSE": self.target = (13.5, 10) 
             elif self.current_ai_mode == "FRIGHTENED": self.target = (player.grid_x, player.grid_y)
@@ -232,10 +244,19 @@ class Ghost:
             # 新增散開模式
             elif self.current_ai_mode == "SCATTER":
                 current_target_point = self.scatter_path[self.scatter_index]
+                # 檢查是否抵達當前路徑點
                 if (self.grid_x, self.grid_y) == current_target_point:
                     self.scatter_index += 1
+                    
+                    # 如果路徑走完了 (Index 超出範圍)
                     if self.scatter_index >= len(self.scatter_path):
-                        self.scatter_index = 0  # 回到第一個點，形成迴圈
+                        self.scatter_index = 0 # 歸零，準備下一圈
+                        
+                        # 【關鍵】：只有在這個瞬間，才檢查是否該切換去追人
+                        if global_ghost_mode == "CHASE":
+                            self.current_ai_mode = self.ai_mode # 切換回原本的追逐個性
+                            # 這裡不需要反向，因為是順勢切換
+                            print(f"{self.color} 繞行結束，開始追逐！")
                 
                 self.target = self.scatter_path[self.scatter_index]
             # 四個鬼的獨立AI

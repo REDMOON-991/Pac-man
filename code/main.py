@@ -99,19 +99,11 @@ while running:
                 global_ghost_mode = "CHASE"
                 last_mode_switch_time = current_time
                 print("切換模式：開始追逐 (CHASE)")
-                # 讓鬼反向移動 (經典 Pac-Man 機制)
-                for ghost in ghosts:
-                    if ghost.current_ai_mode not in ["GO_HOME", "EXIT_HOUSE", "WAITING"]:
-                        ghost.direction = (ghost.direction[0] * -1, ghost.direction[1] * -1)
 
             elif global_ghost_mode == "CHASE" and time_passed > CHASE_DURATION:
                 global_ghost_mode = "SCATTER"
                 last_mode_switch_time = current_time
                 print("切換模式：散開 (SCATTER)")
-                # 讓鬼反向移動
-                for ghost in ghosts:
-                    if ghost.current_ai_mode not in ["GO_HOME", "EXIT_HOUSE", "WAITING"]:
-                        ghost.direction = (ghost.direction[0] * -1, ghost.direction[1] * -1)
         
         # 更新所有鬼的狀態 (將全域模式套用到每隻鬼身上)
         for ghost in ghosts:
@@ -153,7 +145,7 @@ while running:
         # 鬼的更新 (Inky 需要 Blinky 的位置來計算夾擊)
         blinky_pos_for_inky = (blinky.grid_x, blinky.grid_y)
         for ghost in ghosts:
-            ghost.update(GAME_MAP, player, ghosts, dt, blinky_pos_for_inky) 
+            ghost.update(GAME_MAP, player, ghosts, dt, global_ghost_mode, blinky_pos_for_inky) 
         
         # 碰撞偵測
         for ghost in ghosts:
