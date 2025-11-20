@@ -35,11 +35,26 @@ def draw_map():
 # 建立遊戲物件(讓他置中)
 player = Player(13.5, 23)
 
+# 定義散開模式的巡邏路徑 (Scatter Paths)
+# 這些座標構成一個迴圈，讓鬼在角落繞圈圈
+# Blinky (右上角): 繞行右上方的牆壁塊
+path_blinky = [(21, 1), (26, 1), (26, 5), (21, 5)]
+
+# Pinky (左上角): 繞行左上方的牆壁塊 (對稱)
+path_pinky = [(6, 1), (1, 1), (1, 5), (6, 5)]
+
+# Inky (右下角): 繞行右下方的牆壁塊
+# 注意：右下角地形較複雜，這條路徑繞過 L 型牆壁
+path_inky = [(21, 26), (26, 26), (26, 29), (21, 29)]
+
+# Clyde (左下角): 繞行左下方的牆壁塊
+path_clyde = [(6, 26), (1, 26), (1, 29), (6, 29)]
+
 # 建立四隻鬼，設定不同的顏色與 AI 模式、等待時間
-blinky = Ghost(13, 14, RED, ai_mode="CHASE_BLINKY", scatter_target=(26, 1), in_house=True, delay=0)
-pinky = Ghost(14, 14, PINK, ai_mode="CHASE_PINKY", scatter_target=(1, 1), in_house=True, delay=3000)
-inky = Ghost(12, 14, CYAN, ai_mode="CHASE_INKY", scatter_target=(26, 29), in_house=True, delay=6000)
-clyde = Ghost(15, 14, ORANGE, ai_mode="CHASE_CLYDE", scatter_target=(1, 29), in_house=True, delay=9000)
+blinky = Ghost(13, 14, RED, ai_mode="CHASE_BLINKY", scatter_path=path_blinky, in_house=True, delay=0)
+pinky = Ghost(14, 14, PINK, ai_mode="CHASE_PINKY", scatter_path=path_pinky, in_house=True, delay=3000)
+inky = Ghost(12, 14, CYAN, ai_mode="CHASE_INKY", scatter_path=path_inky, in_house=True, delay=6000)
+clyde = Ghost(15, 14, ORANGE, ai_mode="CHASE_CLYDE", scatter_path=path_clyde, in_house=True, delay=9000)
 
 
 ghosts = [blinky, pinky, inky, clyde]
