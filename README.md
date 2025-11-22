@@ -1,4 +1,4 @@
-# Pygame Pac-Man Project ᗧ•••ᗣ
+# Pygame Pac-Man Project
 
 這是一個使用 Python 與 Pygame 函式庫開發的經典《小精靈》(Pac-Man) 復刻版遊戲。 專案完整實作了地圖路徑、碰撞偵測、傳送通道，以及經典的四色鬼魂 AI（包含追逐、散開與受驚模式）。
 
