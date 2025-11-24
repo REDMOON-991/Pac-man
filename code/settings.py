@@ -1,7 +1,7 @@
 # settings.py
 import pygame
 
-#* 遊戲架構有關常數
+# * 遊戲架構有關常數
 # 遊戲視窗
 TILE_SIZE = 20
 MAP_HEIGHT = 36 * TILE_SIZE
@@ -14,9 +14,9 @@ BLACK = (0, 0, 0)
 BLUE = (0, 0, 255)
 WHITE = (255, 255, 255)
 YELLOW = (255, 255, 0)
-RED = (255, 0, 0)       
-PINK = (255, 184, 255)  
-CYAN = (0, 255, 255)    
+RED = (255, 0, 0)
+PINK = (255, 184, 255)
+CYAN = (0, 255, 255)
 ORANGE = (255, 184, 82)
 GREY = (150, 150, 150)
 FRIGHTENED_BLUE = (0, 0, 139)
@@ -29,26 +29,26 @@ GAME_OVER_FONT = pygame.font.Font(None, 64)
 WIN_FONT = pygame.font.Font(None, 64)
 LOG_FONT = pygame.font.Font(None, 20)
 
-#* 運作常數
+# * 運作常數
 
 # 時間與速度常數
-SPEED = 2 #玩家與鬼的基本速度
-FRIGHTENED_DURATION = 7000 # 7 秒
+SPEED = 2  # 玩家與鬼的基本速度
+FRIGHTENED_DURATION = 7000  # 7 秒
 SCATTER_DURATION = 7000   # 散開 7 秒
 CHASE_DURATION = 20000    # 追逐 20 秒
 
-# 分數資料 
+# 分數資料
 PELLELETS_POINT = 10
 POWER_PELLET_POINT = 50
 GHOST_POINT = 200
 
-# 遊戲狀態常數 (Game States) 
+# 遊戲狀態常數 (Game States)
 GAME_STATE_START = "START"
 GAME_STATE_PLAYING = "PLAYING"
 GAME_STATE_GAME_OVER = "GAME_OVER"
 GAME_STATE_WIN = "WIN"
 
-# 鬼魂全域/行為模式 (Ghost AI Modes) 
+# 鬼魂全域/行為模式 (Ghost AI Modes)
 # 全域控制
 MODE_SCATTER = "SCATTER"
 MODE_CHASE = "CHASE"
