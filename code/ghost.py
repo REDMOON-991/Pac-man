@@ -3,6 +3,7 @@ import pygame
 import random
 import math
 from settings import *
+from queue import PriorityQueue
 
 
 class Ghost:
@@ -111,8 +112,57 @@ class Ghost:
                 self.current_ai_mode = self.ai_mode
             # self.speed = self.default_speed
 
+    #定義a*演算法-------------------
+    def heuristic(self, a, b):
+        (x1, y1) = a
+        (x2, y2) = b
+        return abs(x1 - x2) + abs(y1 - y2)
+
+    def A_star(self, start, goal, game_map):
+        open_set = PriorityQueue()
+        open_set.put((0, start))
+        came_from = {}
+        g_score = {start: 0}
+
+        while not open_set.empty():
+            _, current = open_set.get()
+
+            if current == goal:
+                return self.reconstruct_path(came_from, current)
+
+            for nx, ny in self.get_neighbors(current, game_map):
+
+                tentative = g_score[current] + 1
+                if (nx, ny) not in g_score or tentative < g_score[(nx, ny)]:
+                    g_score[(nx, ny)] = tentative
+                    priority = tentative + self.heuristic((nx, ny), goal)  # 用 self.呼叫
+                    open_set.put((priority, (nx, ny)))
+                    came_from[(nx, ny)] = current
+        return None
+    
+    def get_neighbors(self, node, game_map):
+        x, y = node
+        directions = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+        neighbors = []
+
+        for dx, dy in directions:
+            nx, ny = x + dx, y + dy
+            if 0 <= ny < len(game_map) and 0 <= nx < len(game_map[0]):
+                if not is_wall(game_map, nx, ny):  # 確認不是牆壁
+                    neighbors.append((nx, ny))
+        return neighbors
+    
+    def reconstruct_path(self,came_from, current):
+        path = [current]
+        while current in came_from:
+            current = came_from[current]
+            path.append(current)
+        path.reverse()
+        return path
+    #----------------
     # ! 這版演算法只是單純的計算絕對距離 沒有算路徑長 所以可能繞遠路
     # ? 要試試看BFS嗎 還是A*
+
     def get_distance(self, pos1, pos2):
         return math.hypot(pos1[0] - pos2[0], pos1[1] - pos2[1])
 
@@ -286,12 +336,19 @@ class Ghost:
 
             # *四個鬼的獨立AI模式
 
-            # PINKY 追著玩家
+            # BLINKY 追著玩家
             elif self.current_ai_mode == AI_CHASE_BLINKY:
                 self.target = (player.grid_x, player.grid_y)
+                # 用 A* 找路徑
+                path = self.A_star((self.grid_x, self.grid_y), self.target, game_map)
+                if path and len(path) > 1:
+                    next_step = path[1]  # path[0] 是自己目前位置
+                    dx = next_step[0] - self.grid_x
+                    dy = next_step[1] - self.grid_y
+                    self.direction = (dx, dy)
 
-            # BLINKY 預測玩家未來的位置 追那裡
-            # 如果超出、是牆壁的話要怎麼追S
+            # PINKY 預測玩家未來的位置 追那裡
+            # 如果超出、是牆壁的話要怎麼追
             # 如果目標在牆壁裡：Pinky 會試圖走到牆壁的「隔壁」，也就是地圖上最靠近那個牆壁點的可通行位置。
             # 如果目標在地圖外：Pinky 會試圖走到地圖的邊緣，貼著邊界看著那個遙遠的目標
             elif self.current_ai_mode == AI_CHASE_PINKY:
