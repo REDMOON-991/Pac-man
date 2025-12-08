@@ -156,6 +156,26 @@ while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
+
+        if event.type == pygame.KEYDOWN:
+            # 按 1 切換 Greedy
+            if event.key == pygame.K_1:
+                log_message("Algorithm switched to: GREEDY")
+                for ghost in ghosts:
+                    ghost.algorithm = "GREEDY"
+
+            # 按 2 切換 BFS
+            elif event.key == pygame.K_2:
+                log_message("Algorithm switched to: BFS")
+                for ghost in ghosts:
+                    ghost.algorithm = "BFS"
+
+            # 按 3 切換 A*
+            elif event.key == pygame.K_3:
+                log_message("Algorithm switched to: A*")
+                for ghost in ghosts:
+                    ghost.algorithm = "ASTAR"
+
         if game_state == GAME_STATE_START:
             if event.type == pygame.KEYDOWN:
                 if event.key in [pygame.K_UP, pygame.K_DOWN, pygame.K_LEFT, pygame.K_RIGHT]:
@@ -201,7 +221,7 @@ while running:
                     # 切換回它原本的追逐個性 (CHASE_BLINKY 等)
                     ghost.current_ai_mode = ghost.ai_mode
 
-            ghost.update(GAME_MAP, player, ghosts, dt,
+            ghost.update(GAME_MAP, player, dt,
                          global_ghost_mode, blinky_pos_for_inky)
 
         # Frightened (受驚) 模式計時器

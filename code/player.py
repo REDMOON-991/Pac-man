@@ -46,9 +46,8 @@ class Player:
         self.grid_x = curr_grid_x
         self.grid_y = curr_grid_y
 
-        # 吃豆子邏輯
-        # 加入邊界檢查，防止吃豆子時也報錯
-        if 0 <= curr_grid_y < len(game_map) and 0 <= curr_grid_x < len(game_map[0]):
+        # 吃豆子邏輯 (加入邊界檢查)
+        if 0 <= curr_grid_y < len(game_map) and 0 <= curr_grid_x < len(game_map[curr_grid_y]):
             current_tile = game_map[curr_grid_y][curr_grid_x]
             if current_tile == TILE_PELLET:
                 game_map[curr_grid_y][curr_grid_x] = TILE_EMPTY
@@ -57,14 +56,21 @@ class Player:
                 game_map[curr_grid_y][curr_grid_x] = TILE_EMPTY
                 return EVENT_ATE_POWER_PELLET
 
-        # 轉彎邏輯 (分軸檢查)
+        # --- 轉彎邏輯 (修復 IndexError) ---
         if self.next_direction != (0, 0):
             # 水平轉彎 (左/右)
             if self.next_direction[1] == 0:
                 if is_centered_y:
                     next_grid_x = curr_grid_x + self.next_direction[0]
-                    # 檢查邊界，如果在範圍內才檢查牆壁；範圍外(隧道)允許轉彎
-                    if not is_wall(game_map, next_grid_x, curr_grid_y) and game_map[curr_grid_y][next_grid_x] != TILE_DOOR:
+
+                    # 安全檢查：是否為門
+                    is_door = False
+                    if 0 <= curr_grid_y < len(game_map) and 0 <= next_grid_x < len(game_map[curr_grid_y]):
+                        if game_map[curr_grid_y][next_grid_x] == TILE_DOOR:
+                            is_door = True
+
+                    # 只有當 "不是牆壁" 且 "不是門" 時才轉彎
+                    if not is_wall(game_map, next_grid_x, curr_grid_y) and not is_door:
                         self.direction = self.next_direction
                         self.next_direction = (0, 0)
                         self.pixel_y = (
@@ -74,34 +80,42 @@ class Player:
             elif self.next_direction[0] == 0:
                 if is_centered_x:
                     next_grid_y = curr_grid_y + self.next_direction[1]
-                    # 檢查邊界
-                    if not is_wall(game_map, curr_grid_x, next_grid_y) and game_map[next_grid_y][curr_grid_x] != TILE_DOOR:
+
+                    # 安全檢查：是否為門
+                    is_door = False
+                    if 0 <= next_grid_y < len(game_map) and 0 <= curr_grid_x < len(game_map[next_grid_y]):
+                        if game_map[next_grid_y][curr_grid_x] == TILE_DOOR:
+                            is_door = True
+
+                    if not is_wall(game_map, curr_grid_x, next_grid_y) and not is_door:
                         self.direction = self.next_direction
                         self.next_direction = (0, 0)
                         self.pixel_x = (
                             curr_grid_x * TILE_SIZE) + (TILE_SIZE // 2)
 
-        # 移動與撞牆檢查 (分軸檢查 + 邊界保護)
+        # --- 移動與撞牆檢查 (修復 IndexError) ---
         can_move = True
 
         # 如果正在水平移動 (左/右)
         if self.direction[1] == 0 and self.direction[0] != 0:
             if is_centered_x:
                 next_grid_x = curr_grid_x + self.direction[0]
-                # 只有當 next_g_x 在地圖範圍內時，才檢查是不是牆壁
-                # 如果超出範圍 (例如 -1 或 29)，代表正在進隧道，我們允許移動 (不設 can_move = False)
-                if 0 <= next_grid_x < len(game_map[0]):
+
+                # 只有當座標在地圖的 "實際範圍內" 時，才檢查牆壁與門
+                if 0 <= curr_grid_y < len(game_map) and 0 <= next_grid_x < len(game_map[curr_grid_y]):
                     if is_wall(game_map, next_grid_x, curr_grid_y) or game_map[curr_grid_y][next_grid_x] == TILE_DOOR:
                         can_move = False
                         self.pixel_x = (
                             curr_grid_x * TILE_SIZE) + (TILE_SIZE // 2)
+                # 註：如果超出範圍 (隧道)，這裡不會設 can_move = False，所以允許通過
 
         # 如果正在垂直移動 (上/下)
         elif self.direction[0] == 0 and self.direction[1] != 0:
             if is_centered_y:
                 next_grid_y = curr_grid_y + self.direction[1]
-                # 只有當 next_g_y 在地圖範圍內時，才檢查是不是牆壁
-                if 0 <= next_grid_y < len(game_map):
+
+                # 只有當座標在地圖的 "實際範圍內" 時，才檢查牆壁與門
+                if 0 <= next_grid_y < len(game_map) and 0 <= curr_grid_x < len(game_map[next_grid_y]):
                     if is_wall(game_map, curr_grid_x, next_grid_y) or game_map[next_grid_y][curr_grid_x] == TILE_DOOR:
                         can_move = False
                         self.pixel_y = (

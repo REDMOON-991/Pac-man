@@ -7,7 +7,7 @@ from queue import PriorityQueue
 
 
 class Ghost:
-    def __init__(self, grid_x, grid_y, color, ai_mode, scatter_point=None, in_house=False, delay=0, on_log=None):
+    def __init__(self, grid_x, grid_y, color, ai_mode, scatter_point=None, in_house=False, delay=0, on_log=None, algorithm=ALGO_ASTAR):
         self.grid_x = grid_x
         self.grid_y = grid_y
         self.home_pos = (grid_x, grid_y)
@@ -23,7 +23,7 @@ class Ghost:
         self.all_directions = [(0, -1), (0, 1), (-1, 0), (1, 0)]
 
         self.ai_mode = ai_mode
-
+        self.algorithm = algorithm
         self.delay = delay
 
         if in_house:
@@ -112,345 +112,382 @@ class Ghost:
                 self.current_ai_mode = self.ai_mode
             # self.speed = self.default_speed
 
-    #定義a*演算法-------------------
+    # 地圖規則定義
+    def get_neighbors(self, node):
+        """ 回傳所有合法的相鄰座標 (處理隧道與門) """
+        x, y = node
+        neighbors = []
+        map_width = len(GAME_MAP[0])
+        map_height = len(GAME_MAP)
+
+        # 上下左右
+        for dx, dy in [(0, -1), (0, 1), (-1, 0), (1, 0)]:
+            # 隧道處理 (X軸 Wrap-around)
+            nx = (x + dx) % map_width
+            ny = y + dy
+
+            # 邊界檢查 (Y軸)
+            if 0 <= ny < map_height:
+                # ---  Safety Check: X軸邊界檢查 ---
+                # 如果 nx 超出了這一行的實際長度 (例如地圖下方的空白區)，視為牆壁，跳過
+                if nx >= len(GAME_MAP[ny]):
+                    continue
+                # 牆壁檢查
+                if is_wall(GAME_MAP, nx, ny):
+                    continue
+
+                # 門的檢查 (只有回家或出門模式可以過)
+                if GAME_MAP[ny][nx] == TILE_DOOR:
+                    if self.current_ai_mode not in [MODE_EXIT_HOUSE, MODE_GO_HOME]:
+                        continue
+
+                neighbors.append((nx, ny))
+        return neighbors
+
     def heuristic(self, a, b):
         (x1, y1) = a
         (x2, y2) = b
         return abs(x1 - x2) + abs(y1 - y2)
 
-    def A_star(self, start, goal, game_map):
+    def get_target_position(self, player, blinky_pos=None):
+        """
+        根據當前 AI 模式與個性，決定一個 '合法的' 目標格子 (grid_x, grid_y)
+        """
+        target = (self.grid_x, self.grid_y)  # 預設原地
+
+        # A. 特殊模式
+        if self.current_ai_mode == MODE_GO_HOME:
+            return self.home_pos
+        elif self.current_ai_mode == MODE_EXIT_HOUSE:
+            return (13, 11)  # 門口上方
+        elif self.current_ai_mode == MODE_FRIGHTENED:
+            # 驚嚇模式通常是隨機走，但若要用 A*，可以設一個隨機的遠處空地
+            # 簡單做法：隨機選一個非牆壁的點
+            #! 這裡用貪婪吧
+            while True:
+                rx = random.randint(1, 26)
+                ry = random.randint(1, 29)
+                if not is_wall(GAME_MAP, rx, ry):
+                    return (rx, ry)
+
+        # B. 散開模式 (Scatter)
+        elif self.current_ai_mode == MODE_SCATTER:
+            # 取出當前要去的角落點
+            target = self.scatter_path[self.scatter_index]
+            # (如果抵達了就換下一個點的邏輯，建議寫在 update 裡更新 index)
+            return target
+
+        # C. 追逐模式 (Chase) - 個性化邏輯
+        elif self.current_ai_mode == AI_CHASE_BLINKY:
+            target = (player.grid_x, player.grid_y)
+
+        elif self.current_ai_mode == AI_CHASE_PINKY:
+            # 目標：玩家前方 4 格
+            dx, dy = player.direction
+            target = (player.grid_x + dx * 4, player.grid_y + dy * 4)
+
+        elif self.current_ai_mode == AI_CHASE_INKY and blinky_pos:
+            # 向量夾擊
+            px, py = player.grid_x + \
+                player.direction[0]*2, player.grid_y + player.direction[1]*2
+            bx, by = blinky_pos
+            target = (px + (px - bx), py + (py - by))
+
+        elif self.current_ai_mode == AI_CHASE_CLYDE:
+            dist = math.hypot(self.grid_x - player.grid_x,
+                              self.grid_y - player.grid_y)
+            if dist > 8:
+                target = (player.grid_x, player.grid_y)
+            else:
+                target = self.scatter_path[0]  # 離太近就回家
+
+        # --- 關鍵修正：目標合法化 (Clamp Target) ---
+        # Pinky/Inky 算出來的目標常常會在牆壁裡或地圖外，導致 A* 失敗。
+        # 我們需要把目標「拉回」到地圖內最近的非牆壁點。
+        target = self.validate_target(target)
+        return target
+
+    def validate_target(self, target):
+        """ 確保目標在地圖範圍內且不是牆壁，如果是壞目標，就找最近的好目標 """
+        tx, ty = int(target[0]), int(target[1])
+        max_y = len(GAME_MAP) - 1
+        max_x = len(GAME_MAP[0]) - 1
+
+        # 1. 限制範圍 (Clamp)
+        tx = max(1, min(tx, max_x - 1))
+        ty = max(1, min(ty, max_y - 1))
+
+        # 2. 如果是牆壁，尋找周圍最近的空地 (簡單 BFS 或 螺旋搜尋)
+        if is_wall(GAME_MAP, tx, ty):
+            # 簡單搜尋：找上下左右最近的空位
+            for dist in range(1, 5):  # 搜尋半徑 5 格
+                for dx, dy in [(0, dist), (0, -dist), (dist, 0), (-dist, 0)]:
+                    nx, ny = tx + dx, ty + dy
+                    if 0 <= nx <= max_x and 0 <= ny <= max_y and not is_wall(GAME_MAP, nx, ny):
+                        return (nx, ny)
+            # 如果真的找不到，回傳鬼魂自己現在的位置 (停在原地發呆比當機好)
+            return (self.grid_x, self.grid_y)
+
+        return (tx, ty)
+
+    # 定義貪婪演算法
+    def algo_greedy(self, start, target):
+        """ 貪婪：只看鄰居中誰離目標最近，且通常不允許回頭 (除非只有回頭路) """
+        neighbors = self.get_neighbors(start)
+
+        # 過濾掉「正後方」的格子 (經典 Pac-Man 規則：不能立即 180 度迴轉)
+        # 除非處於死路或特殊狀態，這裡簡化處理：若有其他選擇，就不回頭
+        valid_neighbors = []
+        reverse_pos = (start[0] - self.direction[0],
+                       start[1] - self.direction[1])
+
+        # 處理隧道造成的座標跳躍，導致 reverse_pos 計算誤差 (進階處理略，這裡用簡單過濾)
+        for n in neighbors:
+            if n != reverse_pos:
+                valid_neighbors.append(n)
+
+        # 如果只有死路(只剩回頭路)，就只好回頭
+        if not valid_neighbors:
+            valid_neighbors = neighbors
+
+        if not valid_neighbors:
+            return None
+
+        # 挑選距離目標最近的那個鄰居
+        best_next = min(valid_neighbors,
+                        key=lambda n: self.heuristic(n, target))
+        return best_next
+
+    # 定義BFS
+    def algo_bfs(self, start, target):
+        """ BFS：地毯式搜索，保證最短路徑 """
+        queue = [start]
+        came_from = {start: None}
+
+        while queue:
+            current = queue.pop(0)
+
+            if current == target:
+                break  # 找到目標
+
+            for next_node in self.get_neighbors(current):
+                if next_node not in came_from:
+                    queue.append(next_node)
+                    came_from[next_node] = current
+
+        # 重建路徑，只取第一步
+        return self.reconstruct_next_step(came_from, start, target)
+
+    # 定義a*演算法
+
+    def algo_astar(self, start, target):
+        """ A*：智慧搜索，兼顧距離與成本 """
         open_set = PriorityQueue()
         open_set.put((0, start))
-        came_from = {}
-        g_score = {start: 0}
+        came_from = {start: None}
+        cost_so_far = {start: 0}
 
         while not open_set.empty():
             _, current = open_set.get()
 
-            if current == goal:
-                return self.reconstruct_path(came_from, current)
+            if current == target:
+                break
 
-            for nx, ny in self.get_neighbors(current, game_map):
+            for next_node in self.get_neighbors(current):
+                new_cost = cost_so_far[current] + 1
+                if next_node not in cost_so_far or new_cost < cost_so_far[next_node]:
+                    cost_so_far[next_node] = new_cost
+                    priority = new_cost + self.heuristic(next_node, target)
+                    open_set.put((priority, next_node))
+                    came_from[next_node] = current
 
-                tentative = g_score[current] + 1
-                if (nx, ny) not in g_score or tentative < g_score[(nx, ny)]:
-                    g_score[(nx, ny)] = tentative
-                    priority = tentative + self.heuristic((nx, ny), goal)  # 用 self.呼叫
-                    open_set.put((priority, (nx, ny)))
-                    came_from[(nx, ny)] = current
+        return self.reconstruct_next_step(came_from, start, target)
+
+    def reconstruct_next_step(self, came_from, start, target):
+        """ 從 came_from 字典中回推路徑，並回傳 start 的下一個點 """
+        if target not in came_from:
+            return None  # 沒路
+
+        curr = target
+        path = []
+        while curr != start:
+            path.append(curr)
+            curr = came_from.get(curr)
+            if curr is None:  # 防呆
+                return None
+
+        # path 是 [終點, ..., 第二步, 下一步]
+        # 我們只要回傳 path 的最後一個元素 (也就是 start 的下一步)
+        if path:
+            return path[-1]
         return None
-    
-    def get_neighbors(self, node, game_map):
-        x, y = node
-        directions = [(1, 0), (-1, 0), (0, 1), (0, -1)]
-        neighbors = []
 
-        for dx, dy in directions:
-            nx, ny = x + dx, y + dy
-            if 0 <= ny < len(game_map) and 0 <= nx < len(game_map[0]):
-                if not is_wall(game_map, nx, ny):  # 確認不是牆壁
-                    neighbors.append((nx, ny))
-        return neighbors
-    
-    def reconstruct_path(self,came_from, current):
-        path = [current]
-        while current in came_from:
-            current = came_from[current]
-            path.append(current)
-        path.reverse()
-        return path
-    #----------------
-    # ! 這版演算法只是單純的計算絕對距離 沒有算路徑長 所以可能繞遠路
-    # ? 要試試看BFS嗎 還是A*
+    def _handle_waiting_bounce(self):
+        home_pixel_y = (self.home_pos[1] * TILE_SIZE) + (TILE_SIZE // 2)
+        limit = 5
+        self.pixel_y += self.direction[1]
+        if self.pixel_y > home_pixel_y + limit:
+            self.direction = (0, -0.5)
+        elif self.pixel_y < home_pixel_y - limit:
+            self.direction = (0, 0.5)
 
-    def get_distance(self, pos1, pos2):
-        return math.hypot(pos1[0] - pos2[0], pos1[1] - pos2[1])
-
-    # 找出所有合法的下一步
-    def get_valid_directions(self, game_map, others):
-        valid_moves = []
-        reverse_dir = (self.direction[0] * -1, self.direction[1] * -1)
-
-        for move_dir in self.all_directions:
-            # 某些模式下不能回頭
-            no_rev = (self.current_ai_mode != MODE_WAITING)
-            if no_rev and move_dir == reverse_dir:
-                continue
-
-            next_g_x = int(self.grid_x + move_dir[0])
-            next_g_y = int(self.grid_y + move_dir[1])
-
-            if 0 <= next_g_y < len(game_map):
-                check_x = next_g_x % len(game_map[0])
-                tile = game_map[next_g_y][check_x]
-
-                # 門的通行邏輯
-                if is_wall(game_map, next_g_x, next_g_y):
-                    continue  # 撞牆
-
-                # 接下來處理門與邊界
-                if 0 <= next_g_y < len(game_map):  # 確保讀取地圖不越界
-                    check_x = next_g_x % len(game_map[0])  # 處理左右隧道邏輯
-                    tile = game_map[next_g_y][check_x]
-
-                if tile == TILE_DOOR:
-                    # 只有出門或回家(死掉)模式可以過門
-                    if self.current_ai_mode not in [MODE_EXIT_HOUSE, MODE_GO_HOME]:
-                        continue
-
-                # 鬼重疊檢查 (等待中或出門中的鬼不視為障礙)
-                is_blocked_by_ghost = False
-                if self.current_ai_mode not in [MODE_EXIT_HOUSE, MODE_GO_HOME, MODE_WAITING]:
-                    for ghost in others:
-                        if ghost is not self and ghost.current_ai_mode not in [MODE_EXIT_HOUSE, MODE_GO_HOME, MODE_WAITING]:
-                            if ghost.grid_x == next_g_x and ghost.grid_y == next_g_y:
-                                is_blocked_by_ghost = True
-                                break
-
-                if is_blocked_by_ghost:
-                    continue
-
-                # 如果通過上述檢查，則為合法方向
-                valid_moves.append(move_dir)
-
-        if not valid_moves:
-            valid_moves.append(reverse_dir)
-
-        return valid_moves
-
-    def update(self, game_map, player, all_ghosts, dt, global_ghost_mode, blinky_tile=None):
-        # 只有在非特殊狀態 (非回家、非出門、非驚嚇、非被吃) 時才判斷
+    def update(self, game_map, player, dt, global_ghost_mode, blinky_tile=None):
+        # 1. 狀態與模式檢查 (保持原樣)
         valid_to_switch = (self.current_ai_mode not in [MODE_GO_HOME, MODE_EXIT_HOUSE, MODE_WAITING]
                            and not self.is_frightened
                            and not self.is_eaten)
 
         if valid_to_switch:
-            # 情況 A: 全域變成 SCATTER，但我還在 CHASE
-            # 解法: 立即切換並反向 (經典 Pac-Man 規則：進攻轉撤退要立刻反應)
             if global_ghost_mode == MODE_SCATTER and self.current_ai_mode != MODE_SCATTER:
                 self.current_ai_mode = MODE_SCATTER
                 self.direction = (
                     self.direction[0] * -1, self.direction[1] * -1)
+            elif global_ghost_mode == MODE_CHASE and self.current_ai_mode == MODE_SCATTER:
+                # 從散開切回追逐時，通常不用反向，順著跑即可
+                self.current_ai_mode = self.ai_mode
 
-        # 處理 WAITING 狀態
+        # 處理 WAITING (保持原樣，這段邏輯很獨立)
         if self.current_ai_mode == MODE_WAITING:
-            # 如果現在是驚嚇模式，就暫停倒數，直接 return
-            if self.is_frightened:
-                # 選擇讓它繼續 bounce，但不扣時間
-                home_pixel_y = (self.home_pos[1]
-                                * TILE_SIZE) + (TILE_SIZE // 2)
-                limit = 5
-                self.pixel_y += self.direction[1]
-                if self.pixel_y > home_pixel_y + limit:
-                    self.direction = (0, -0.5)
-                elif self.pixel_y < home_pixel_y - limit:
-                    self.direction = (0, 0.5)
+            if self.is_frightened:  # 驚嚇時原地彈跳
+                self._handle_waiting_bounce()
                 return
 
             self.delay -= dt
-            # 檢查時間是否到了
             if self.delay <= 0:
                 self.current_ai_mode = MODE_EXIT_HOUSE
-                self.direction = (0, -1)  # 往上衝
-                # 修正位置到格子中心，確保出門路徑準確
+                self.direction = (0, -1)
                 self.pixel_x = (self.home_pos[0]
                                 * TILE_SIZE) + (TILE_SIZE // 2)
                 self.pixel_y = (self.home_pos[1]
                                 * TILE_SIZE) + (TILE_SIZE // 2)
                 self.speed = self.default_speed
             else:
-                # 等待時的動畫：在原地上下輕微浮動 (Bounce)
-                home_pixel_y = (self.home_pos[1]
-                                * TILE_SIZE) + (TILE_SIZE // 2)
-                limit = 5
+                self._handle_waiting_bounce()
+            return  # 等待中不執行後續移動
 
-                self.pixel_y += self.direction[1]
-                if self.pixel_y > home_pixel_y + limit:
-                    self.direction = (0, -0.5)
-                elif self.pixel_y < home_pixel_y - limit:
-                    self.direction = (0, 0.5)
+        # --- 移動邏輯開始 ---
 
-            # WAITING 狀態不執行後面的移動邏輯
-            return
-        # 位置整數保證
+        # 位置小數點修正 (保持原樣)
         if abs(self.pixel_x - round(self.pixel_x)) < 0.1:
             self.pixel_x = round(self.pixel_x)
         if abs(self.pixel_y - round(self.pixel_y)) < 0.1:
             self.pixel_y = round(self.pixel_y)
-        # 正常的移動狀態
+
         is_centered_x = (self.pixel_x - (TILE_SIZE // 2)) % TILE_SIZE == 0
         is_centered_y = (self.pixel_y - (TILE_SIZE // 2)) % TILE_SIZE == 0
 
+        # 【決策階段】：只有走到格子正中心時，才動腦思考下一步
         if is_centered_x and is_centered_y:
             self.grid_x = (self.pixel_x - (TILE_SIZE // 2)) // TILE_SIZE
             self.grid_y = (self.pixel_y - (TILE_SIZE // 2)) // TILE_SIZE
 
+            # A. 處理特殊事件 (回家抵達、出門完成)
             if self.current_ai_mode == MODE_GO_HOME and (self.grid_x, self.grid_y) == self.home_pos:
                 self.respawn()
+                return  # 重生後這一幀先不動
 
             if self.current_ai_mode == MODE_EXIT_HOUSE:
-                # 如果 Y 座標小於等於 11 (門在 12)，代表已經出去了
-                if self.grid_y <= 11:
-                    self.current_ai_mode = self.ai_mode  # 切換回正常追蹤模式
-                    self.direction = random.choice([(-1, 0), (1, 0)])  # 隨機往左往右
+                if self.grid_y <= 11:  # 已經走出門口
+                    self.current_ai_mode = self.ai_mode
+                    # 出門後隨機選個方向防止卡頓 (非必要，但順暢點)
+                    self.direction = random.choice([(-1, 0), (1, 0)])
 
-            if not self.is_frightened and self.current_ai_mode not in [MODE_GO_HOME, MODE_EXIT_HOUSE, MODE_WAITING]:
+            # 設定速度 (驚嚇變慢、回家變快)
+            if self.current_ai_mode == MODE_GO_HOME:
+                self.speed = 2 * SPEED
+            elif self.current_ai_mode == MODE_FRIGHTENED:
+                self.speed = 1  # 或 SPEED // 2
+            else:
                 self.speed = self.default_speed
 
-            valid_directions = self.get_valid_directions(game_map, all_ghosts)
+            # B. 【決策核心】：取得目標 -> 選擇演算法 -> 取得下一步
+            # 1. 取得目標 (Target)
+            target = self.get_target_position(player, blinky_tile)
+            self.target = target  # 存起來方便 debug
 
-            player_dir_x = player.direction[0]
-            player_dir_y = player.direction[1]
-            player_stopped = (player_dir_x == 0 and player_dir_y == 0)
+            # 散開模式的特殊邏輯：如果到了角落點，切換下一個
+            if self.current_ai_mode == MODE_SCATTER:
+                if (self.grid_x, self.grid_y) == target:
+                    self.scatter_index = (
+                        self.scatter_index + 1) % len(self.scatter_path)
+                    target = self.get_target_position(
+                        player, blinky_tile)  # 更新目標
 
-            self.target = (player.grid_x, player.grid_y)
-            
-            # [新增] 標記是否已經使用了 A* 找到了路徑，避免被後面的貪婪演算法覆蓋
-            use_astar_path = False
+            # 2. 執行演算法 (Algorithm)
+            start_pos = (self.grid_x % len(game_map[0]), self.grid_y)
+            next_step = None
 
-            # *設定AI模式
-            # 共通模式 離家 回家 驚嚇
-            if self.current_ai_mode == MODE_EXIT_HOUSE:
-                self.target = (13.5, 10)
-            elif self.current_ai_mode == MODE_FRIGHTENED:
-                self.target = (player.grid_x, player.grid_y)
-            elif self.current_ai_mode == MODE_GO_HOME:
-                self.target = self.home_pos
-                
-            # 散開模式 (原本只有設定 target，現在加入 A*)
-            elif self.current_ai_mode == MODE_SCATTER:
-                current_target_point = self.scatter_path[self.scatter_index]
-                # 檢查是否抵達當前路徑點
-                if (self.grid_x, self.grid_y) == current_target_point:
-                    self.scatter_index += 1
+            # 根據 settings 設定的演算法來跑
+            if self.algorithm == ALGO_GREEDY:
+                next_step = self.algo_greedy(start_pos, target)
+            elif self.algorithm == ALGO_BFS:
+                next_step = self.algo_bfs(start_pos, target)
+            elif self.algorithm == ALGO_ASTAR:
+                next_step = self.algo_astar(start_pos, target)
 
-                    # 如果路徑走完了 (Index 超出範圍)
-                    if self.scatter_index >= len(self.scatter_path):
-                        self.scatter_index = 0  # 歸零，準備下一圈
+            # 3. 計算移動向量 (處理隧道)
+            if next_step:
+                dx = next_step[0] - self.grid_x
+                dy = next_step[1] - self.grid_y
+                map_width = len(game_map[0])
 
-                        # 【關鍵】：只有在這個瞬間，才檢查是否該切換去追人
-                        if global_ghost_mode == MODE_CHASE:
-                            self.current_ai_mode = self.ai_mode  # 切換回原本的追逐個性
-                            # 這裡不需要反向，因為是順勢切換
-                            if self.on_log:
-                                self.on_log(f"{self.color} 繞行結束，開始追逐！")
-
-                self.target = self.scatter_path[self.scatter_index]
-                
-                # [修改] 使用 A* 尋找前往 scatter 點的路徑
-                path = self.A_star((self.grid_x, self.grid_y), self.target, game_map)
-                if path and len(path) > 1:
-                    next_step = path[1]
-                    dx = next_step[0] - self.grid_x
-                    dy = next_step[1] - self.grid_y
-                    self.direction = (dx, dy)
-                    use_astar_path = True # 標記已使用 A*
-
-            # *四個鬼的獨立AI模式
-
-            # BLINKY 追著玩家
-            elif self.current_ai_mode == AI_CHASE_BLINKY:
-                self.target = (player.grid_x, player.grid_y)
-                # 用 A* 找路徑
-                path = self.A_star((self.grid_x, self.grid_y), self.target, game_map)
-                if path and len(path) > 1:
-                    next_step = path[1]  # path[0] 是自己目前位置
-                    dx = next_step[0] - self.grid_x
-                    dy = next_step[1] - self.grid_y
-                    self.direction = (dx, dy)
-                    use_astar_path = True # 標記已使用 A*
-
-            # PINKY 預測玩家未來的位置 追那裡
-            elif self.current_ai_mode == AI_CHASE_PINKY:
-                # 1. 維持原本的目標計算邏輯
-                if player_stopped:
-                    self.target = (player.grid_x, player.grid_y)
+                # 隧道判斷：如果水平差距過大，代表是穿過邊界
+                if dx > map_width // 2:
+                    self.direction = (-1, 0)  # 往左鑽
+                elif dx < -map_width // 2:
+                    self.direction = (1, 0)  # 往右鑽
                 else:
-                    self.target = (player.grid_x + (player_dir_x * 4),
-                                   player.grid_y + (player_dir_y * 4))
-                
-                # 2. 【新增】加入 A* 路徑搜尋
-                path = self.A_star((self.grid_x, self.grid_y), self.target, game_map)
-                if path and len(path) > 1:
-                    next_step = path[1]
-                    dx = next_step[0] - self.grid_x
-                    dy = next_step[1] - self.grid_y
                     self.direction = (dx, dy)
-                    use_astar_path = True
-
-            #Pinky 和 Inky 的目標點經常會落在「牆壁內」或「地圖外」，這時候 A* 可能會找不到路徑（回傳 None）
-            #因為 use_astar_path 保持 False，自動切換回下方的貪婪演算法
-            # CLYDE 裝忙 快追到就跑
-            elif self.current_ai_mode == AI_CHASE_CLYDE:
-                # 1. 維持原本的目標計算邏輯
-                distance = self.get_distance(
-                    (self.grid_x, self.grid_y), (player.grid_x, player.grid_y))
-                if distance > 8:
-                    self.target = (player.grid_x, player.grid_y)
-                else:
-                    self.target = self.scatter_path[0]
-
-                # 2. 【新增】加入 A* 路徑搜尋
-                path = self.A_star((self.grid_x, self.grid_y), self.target, game_map)
-                if path and len(path) > 1:
-                    next_step = path[1]
-                    dx = next_step[0] - self.grid_x
-                    dy = next_step[1] - self.grid_y
+            else:
+                valid_neighbors = self.get_neighbors(start_pos)
+                if valid_neighbors:
+                    # 簡單策略：隨機選一個，或者選和當前方向最接近的
+                    fallback_step = random.choice(valid_neighbors)
+                    dx = fallback_step[0] - self.grid_x
+                    dy = fallback_step[1] - self.grid_y
                     self.direction = (dx, dy)
-                    use_astar_path = True
 
-            # INKY 由blinky和玩家的位置決定要怎麼追
-            elif self.current_ai_mode == AI_CHASE_INKY:
-                # 1. 維持原本的目標計算邏輯
-                if blinky_tile is None or player_stopped:
-                    self.target = (player.grid_x, player.grid_y)
+        # 即使 A* 說可以走，我們還是要檢查下一步會不會撞牆 (雙重保險)
+        can_move = True
+
+        # 預測下一步的位置 (只檢查前方一個 TILE 的距離)
+        next_check_x = self.grid_x + self.direction[0]
+        next_check_y = self.grid_y + self.direction[1]
+
+        # 處理隧道邊界，避免 Index Error
+        map_width = len(game_map[0])
+        next_check_x = next_check_x % map_width
+
+        # 如果不是在中心點 (正在移動中)，通常允許繼續走，直到下一個中心點
+        # 但如果 A* 規劃錯誤導致方向撞牆，這裡要擋下來
+        if is_centered_x and is_centered_y:
+            if 0 <= next_check_y < len(game_map):
+
+                # 安全讀取地圖格子
+                if next_check_x < len(game_map[next_check_y]):
+                    next_tile = game_map[next_check_y][next_check_x]
+
+                    # 1. 【優先檢查】如果是門
+                    if next_tile == TILE_DOOR:
+                        # 如果 "不是" 出門或回家模式，才擋下來
+                        if self.current_ai_mode not in [MODE_EXIT_HOUSE, MODE_GO_HOME]:
+                            can_move = False
+
+                    # 2. 如果是牆壁 (且上面沒說是可通行的門)
+                    elif is_wall(game_map, next_check_x, next_check_y):
+                        can_move = False
                 else:
-                    trigger_x = player.grid_x + (player_dir_x * 2)
-                    trigger_y = player.grid_y + (player_dir_y * 2)
-                    blinky_x, blinky_y = blinky_tile
-                    vec_x = trigger_x - blinky_x
-                    vec_y = trigger_y - blinky_y
-                    self.target = (trigger_x + vec_x, trigger_y + vec_y)
+                    # 超出該行長度 (虛空)，視為牆壁
+                    can_move = False
 
-                # 2. 【新增】加入 A* 路徑搜尋
-                path = self.A_star((self.grid_x, self.grid_y), self.target, game_map)
-                if path and len(path) > 1:
-                    next_step = path[1]
-                    dx = next_step[0] - self.grid_x
-                    dy = next_step[1] - self.grid_y
-                    self.direction = (dx, dy)
-                    use_astar_path = True
+        if can_move:
+            self.pixel_x += self.direction[0] * self.speed
+            self.pixel_y += self.direction[1] * self.speed
 
-            # 走遍他所能允許的方向 (貪婪算法)
-            # [修改] 增加判斷：如果 use_astar_path 為 True，代表已經決定方向了，就跳過這裡
-            if not use_astar_path and self.target and valid_directions:
-                best_direction = (0, 0)
-                if self.current_ai_mode == MODE_FRIGHTENED:
-                    best_distance = float('-inf')
-                else:
-                    best_distance = float('inf')
-
-                for direction in valid_directions:
-                    next_g_x = self.grid_x + direction[0]
-                    next_g_y = self.grid_y + direction[1]
-                    dist = self.get_distance((next_g_x, next_g_y), self.target)
-
-                    # 驚嚇模式 要選擇能有多遠就多遠
-                    if self.current_ai_mode == MODE_FRIGHTENED:
-                        if dist > best_distance:
-                            best_distance = dist
-                            best_direction = direction
-                    # 追逐模式 要選擇能有多近就多近
-                    else:
-                        if dist < best_distance:
-                            best_distance = dist
-                            best_direction = direction
-                self.direction = best_direction
-
-        self.pixel_x += self.direction[0] * self.speed
-        self.pixel_y += self.direction[1] * self.speed
-
+        # 隧道瞬間移動 (Teleport)
         if self.pixel_x < -TILE_SIZE//2:
             self.pixel_x = SCREEN_WIDTH + TILE_SIZE//2
+            self.grid_x = 27
         elif self.pixel_x > SCREEN_WIDTH + TILE_SIZE//2:
             self.pixel_x = -TILE_SIZE//2
+            self.grid_x = 0

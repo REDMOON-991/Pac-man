@@ -49,6 +49,12 @@ GAME_STATE_GAME_OVER = "GAME_OVER"
 GAME_STATE_WIN = "WIN"
 
 # 鬼魂全域/行為模式 (Ghost AI Modes)
+# 鬼演算法
+
+ALGO_GREEDY = "GREEDY"
+ALGO_BFS = "BFS"
+ALGO_ASTAR = "ASTAR"
+
 # 全域控制
 MODE_SCATTER = "SCATTER"
 MODE_CHASE = "CHASE"
@@ -122,7 +128,8 @@ def is_wall(game_map, x, y):
     如果座標超出地圖範圍 (例如左右隧道)，回傳 False (表示可通行)。
     """
     # 檢查是否在地圖範圍內
-    if 0 <= y < len(game_map) and 0 <= x < len(game_map[0]):
-        return game_map[y][x] == TILE_WALL
+    if 0 <= y < len(game_map):
+        if 0 <= x < len(game_map[y]):
+            return game_map[y][x] == TILE_WALL
     # 超出範圍 (例如隧道口)，視為非牆壁，可通行
     return False
