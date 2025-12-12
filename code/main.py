@@ -707,6 +707,49 @@ class Game:
             panel_w = int(display_w * 0.3)
             self.draw_logs_panel(panel_x, 0, panel_w, display_h)
 
+    def draw_logs_panel(self, x, y, width, height):
+        # Background
+        rect = pygame.Rect(x, y, width, height)
+        pygame.draw.rect(self.display_surface, (20, 20, 20), rect)
+        pygame.draw.line(self.display_surface, GREY, (x, 0), (x, height), 2)
+
+        # Controls
+        self.draw_controls(x, y + 20, width)
+
+        # Logs
+        log_y_start = height // 2
+
+        title = LOG_FONT.render("Game Logs:", True, GREY)
+        self.display_surface.blit(title, (x + 20, log_y_start))
+
+        start_y = log_y_start + 30
+        line_spacing = 25
+        for i, (msg, color) in enumerate(self.game_logs):
+            text_surf = LOG_FONT.render(msg, True, color)
+            self.display_surface.blit(
+                text_surf, (x + 20, start_y + i * line_spacing))
+
+    def draw_controls(self, x, y, width):
+        title = SCORE_FONT.render("- CONTROLS -", True, YELLOW)
+        self.display_surface.blit(title, (x + 20, y))
+
+        controls = [
+            ("ARROW KEYS", "Move"),
+            ("P or ESC", "Pause/Resume"),
+            ("F11", "Fullscreen"),
+            ("Q", "Quit (in Menu/Pause)"),
+            ("R", "Restart (End Game)"),
+            ("ENTER/SPACE", "Start Game"),
+        ]
+
+        curr_y = y + 40
+        for key, action in controls:
+            k_surf = LOG_FONT.render(key, True, CYAN)
+            a_surf = LOG_FONT.render(action, True, WHITE)
+            self.display_surface.blit(k_surf, (x + 20, curr_y))
+            self.display_surface.blit(a_surf, (x + 20, curr_y + 20))
+            curr_y += 50
+
     def run(self):
         try:
             while self.running:
