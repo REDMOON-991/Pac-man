@@ -18,10 +18,16 @@ class Game:
             (self.window_width, self.window_height), pygame.RESIZABLE)
         pygame.display.set_caption("Pygame Pac-Man (F11: Fullscreen)")
 
-        # Game Content Surface (for map and game elements)
-        self.game_content_height = MAP_HEIGHT
+        # UI Layout Constants
+        self.HEADER_HEIGHT = 40  # Space for Score/Lives at the top
+
+        # Game Content Surface (Full internal resolution: Header + Map)
+        self.game_content_height = MAP_HEIGHT + self.HEADER_HEIGHT
         self.game_content_surface = pygame.Surface(
             (SCREEN_WIDTH, self.game_content_height))
+
+        # Map Surface (Just the maze)
+        self.map_surface = pygame.Surface((SCREEN_WIDTH, MAP_HEIGHT))
 
         # Clock
         self.clock = pygame.time.Clock()
@@ -91,8 +97,42 @@ class Game:
         if len(self.game_logs) > self.MAX_LOGS:
             self.game_logs.pop(0)
 
+    def get_layout_metrics(self):
+        """ Calculate scale and offsets for centering the game content """
+        display_w, display_h = self.display_surface.get_size()
+
+        # Decide if we are in "Wide Mode" (Sidebar for logs)
+        # Using 1.3 aspect ratio threshold
+        is_wide = (display_w / display_h > 1.3) or self.is_fullscreen
+
+        if is_wide:
+            # Map takes 70% width, centered in left area
+            available_w = display_w * 0.7
+            available_h = display_h
+        else:
+            # Full window available
+            available_w = display_w
+            available_h = display_h
+
+        # Calculate Scale to fit
+        scale_w = available_w / SCREEN_WIDTH
+        scale_h = available_h / self.game_content_height
+        scale = min(scale_w, scale_h)
+
+        target_w = int(SCREEN_WIDTH * scale)
+        target_h = int(self.game_content_height * scale)
+
+        # Center in the available area
+        # For wide mode, this centers in the left 70%
+        # For normal mode, centers in whole screen
+        offset_x = (available_w - target_w) // 2
+        offset_y = (available_h - target_h) // 2
+
+        return scale, offset_x, offset_y, target_w, target_h, is_wide
+
     def generate_background(self):
         """ Generate static wall background with connected lines """
+        # Matches Map Size only
         self.background_surface = pygame.Surface((SCREEN_WIDTH, MAP_HEIGHT))
         self.background_surface.fill(BLACK)
 
@@ -232,16 +272,12 @@ class Game:
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
                         mx, my = pygame.mouse.get_pos()
-                        # Calculate scaling to match UI coordinates
-                        display_w, display_h = self.display_surface.get_size()
-                        scale = min(display_w / SCREEN_WIDTH,
-                                    display_h / self.game_content_height)
-                        new_w = int(SCREEN_WIDTH * scale)
-                        new_h = int(self.game_content_height * scale)
-                        offset_x = (display_w - new_w) // 2
-                        offset_y = (display_h - new_h) // 2
+
+                        # Use unified metrics for accurate mouse detection
+                        scale, offset_x, offset_y, _, _, _ = self.get_layout_metrics()
 
                         if self.menu_buttons:
+                            # Convert mouse screen pos to game content pos
                             game_x = (mx - offset_x) / scale
                             game_y = (my - offset_y) / scale
 
@@ -449,10 +485,14 @@ class Game:
                         self.game_state = GAME_STATE_DEATH
                         self.player.start_death_anim()
 
-    def draw_map(self):
+    def draw_map_entities(self):
+        """ Draw everything that belongs to the map layer """
+        # Clear map surface
+        self.map_surface.fill(BLACK)
+
         # 1. Background (Walls)
         if self.background_surface:
-            self.game_content_surface.blit(self.background_surface, (0, 0))
+            self.map_surface.blit(self.background_surface, (0, 0))
 
         # 2. Pellets (Dynamic)
         for y, row in enumerate(self.game_map):
@@ -460,31 +500,81 @@ class Game:
                 rect_x = x * TILE_SIZE
                 rect_y = y * TILE_SIZE
                 if char == TILE_PELLET:
-                    pygame.draw.circle(self.game_content_surface, WHITE,
+                    pygame.draw.circle(self.map_surface, WHITE,
                                        (rect_x + TILE_SIZE//2, rect_y + TILE_SIZE//2), 2)
                 elif char == TILE_POWER_PELLET:
-                    pygame.draw.circle(self.game_content_surface, WHITE,
+                    pygame.draw.circle(self.map_surface, WHITE,
                                        (rect_x + TILE_SIZE//2, rect_y + TILE_SIZE//2), 6)
 
         # 3. Fruit
         if self.fruit_active:
             fx = self.fruit_pos[0] * TILE_SIZE + 10
             fy = self.fruit_pos[1] * TILE_SIZE + 10
-            pygame.draw.circle(self.game_content_surface,
+            pygame.draw.circle(self.map_surface,
                                RED, (fx - 4, fy + 2), 5)
-            pygame.draw.circle(self.game_content_surface,
+            pygame.draw.circle(self.map_surface,
                                RED, (fx + 4, fy + 6), 5)
-            pygame.draw.line(self.game_content_surface, GREEN,
+            pygame.draw.line(self.map_surface, GREEN,
                              (fx - 4, fy + 2), (fx, fy - 6), 2)
-            pygame.draw.line(self.game_content_surface, GREEN,
+            pygame.draw.line(self.map_surface, GREEN,
                              (fx + 4, fy + 6), (fx, fy - 6), 2)
 
             elapsed = pygame.time.get_ticks() - self.fruit_spawn_time
             remaining_sec = max(0, 10 - elapsed // 1000)
             timer_text = LOG_FONT.render(f"{remaining_sec}s", True, WHITE)
-            self.game_content_surface.blit(timer_text, (fx - 10, fy - 25))
+            self.map_surface.blit(timer_text, (fx - 10, fy - 25))
+
+        # 4. Entities (Player, Ghosts)
+        if self.game_state != GAME_STATE_DEATH:
+            if self.player:
+                self.player.draw(self.map_surface)
+
+        if self.game_state != GAME_STATE_DEATH:
+            flash_white = False
+            if self.frightened_mode:
+                elapsed = pygame.time.get_ticks() - self.frightened_start_time
+                remaining = self.level_frightened_duration - elapsed
+                if remaining < 2000:
+                    flash_white = (pygame.time.get_ticks() // 200) % 2 == 0
+
+            for ghost in self.ghosts:
+                ghost.draw(self.map_surface, flash_white=flash_white)
+        elif self.game_state == GAME_STATE_DEATH:
+            if self.player:
+                self.player.draw(self.map_surface)
+
+    def draw_hud(self):
+        """ Draw HUD (Score, Lives) in the header area of game_content_surface """
+        # HUD Area Background (Optional: can be just black)
+        # pygame.draw.rect(self.game_content_surface, (10, 10, 10), (0, 0, SCREEN_WIDTH, self.HEADER_HEIGHT))
+
+        # Center Y for text
+        cy = self.HEADER_HEIGHT // 2
+
+        # Score
+        score_text = SCORE_FONT.render(
+            f"SCORE: {int(self.player.score if self.player else 0)}", True, WHITE)
+        score_rect = score_text.get_rect(midleft=(10, cy))
+        self.game_content_surface.blit(score_text, score_rect)
+
+        # High Score
+        hs_text = SCORE_FONT.render(
+            f"HIGH: {int(self.high_score)}", True, YELLOW)
+        hs_rect = hs_text.get_rect(center=(SCREEN_WIDTH // 2, cy))
+        self.game_content_surface.blit(hs_text, hs_rect)
+
+        # Lives
+        lives_label = SCORE_FONT.render("LIVES:", True, WHITE)
+        lives_rect = lives_label.get_rect(midright=(SCREEN_WIDTH - 100, cy))
+        self.game_content_surface.blit(lives_label, lives_rect)
+
+        start_x = SCREEN_WIDTH - 90
+        for i in range(self.player_lives):
+            pygame.draw.circle(self.game_content_surface,
+                               YELLOW, (start_x + i * 25, cy), 8)
 
     def draw_menu_ui(self, surface):
+        # Menu is drawn on full content surface
         title_surf = WIN_FONT.render("PAC-MAN AI", True, YELLOW)
         surface.blit(title_surf, (SCREEN_WIDTH // 2 -
                      title_surf.get_width() // 2, 100))
@@ -511,53 +601,25 @@ class Game:
             self.menu_buttons.append((rect, algo))
 
     def draw(self):
-        # --- Game Content Render ---
+        # 1. Clear Full Content
         self.game_content_surface.fill(BLACK)
 
+        # 2. Draw Content based on State
         if self.game_state == GAME_STATE_MENU:
             self.draw_menu_ui(self.game_content_surface)
         else:
-            self.draw_map()
-
-            if self.game_state != GAME_STATE_DEATH:
-                self.player.draw(self.game_content_surface)
-
-            # Ghosts
-            if self.game_state != GAME_STATE_DEATH:
-                flash_white = False
-                if self.frightened_mode:
-                    elapsed = pygame.time.get_ticks() - self.frightened_start_time
-                    remaining = self.level_frightened_duration - elapsed
-                    if remaining < 2000:
-                        flash_white = (pygame.time.get_ticks() // 200) % 2 == 0
-
-                for ghost in self.ghosts:
-                    ghost.draw(self.game_content_surface,
-                               flash_white=flash_white)
-
-            # UI Overlays
-            # Score
-            score_text = SCORE_FONT.render(
-                f"SCORE: {int(self.player.score)}", True, WHITE)
-            self.game_content_surface.blit(score_text, (10, 10))
-
-            # High Score
-            hs_text = SCORE_FONT.render(
-                f"HIGH: {int(self.high_score)}", True, YELLOW)
+            # Draw Map Layer
+            self.draw_map_entities()
+            # Blit Map to Content (shifted down by Header)
             self.game_content_surface.blit(
-                hs_text, (SCREEN_WIDTH // 2 - 40, 10))
+                self.map_surface, (0, self.HEADER_HEIGHT))
 
-            # Lives
-            lives_text = SCORE_FONT.render("LIVES:", True, WHITE)
-            self.game_content_surface.blit(
-                lives_text, (SCREEN_WIDTH - 150, 10))
-            for i in range(self.player_lives):
-                cx = SCREEN_WIDTH - 90 + i * 25
-                cy = 18
-                pygame.draw.circle(self.game_content_surface,
-                                   YELLOW, (cx, cy), 8)
+            # Draw GUI/HUD on top
+            self.draw_hud()
 
-            # Center Text States
+            # Center Text Overlays (Ready, Win, Game Over, Pause)
+            # These are centered on the MAP area or Whole Screen?
+            # Whole screen looks better usually.
             center_pos = (SCREEN_WIDTH // 2, self.game_content_height // 2)
 
             if self.game_state == GAME_STATE_START:
@@ -568,12 +630,8 @@ class Game:
                     start_text, start_text.get_rect(center=center_pos))
                 self.game_content_surface.blit(hint_text, hint_text.get_rect(
                     center=(center_pos[0], center_pos[1] + 40)))
-                # Show player in start state
-                if self.player:
-                    self.player.draw(self.game_content_surface)
 
             elif self.game_state == GAME_STATE_READY:
-                # Animation Ready -> GO
                 current_ticks = pygame.time.get_ticks()
                 elapsed = current_ticks - self.ready_animation_start_time
                 if elapsed < 2000:
@@ -584,18 +642,8 @@ class Game:
                     text = WIN_FONT.render("GO!", True, GREEN)
                     self.game_content_surface.blit(
                         text, text.get_rect(center=center_pos))
-                else:
-                    self.game_state = GAME_STATE_PLAYING
-                    self.last_mode_switch_time = pygame.time.get_ticks()
-                    self.log_message(
-                        f"Level {self.current_level} Start! Algo: {self.selected_algorithm}", YELLOW)
-
-            elif self.game_state == GAME_STATE_DEATH:
-                if self.player:
-                    self.player.draw(self.game_content_surface)
 
             elif self.game_state == GAME_STATE_PAUSED:
-                # Draw overlay
                 overlay = pygame.Surface(
                     (SCREEN_WIDTH, self.game_content_height))
                 overlay.fill(BLACK)
@@ -605,12 +653,10 @@ class Game:
                 p_text = WIN_FONT.render("PAUSED", True, YELLOW)
                 self.game_content_surface.blit(
                     p_text, p_text.get_rect(center=center_pos))
-
                 resume_text = SCORE_FONT.render(
                     "Press P / ESC to Resume", True, WHITE)
                 self.game_content_surface.blit(resume_text, resume_text.get_rect(
                     center=(center_pos[0], center_pos[1] + 40)))
-
                 quit_text = SCORE_FONT.render(
                     "Press Q to Quit to Menu", True, WHITE)
                 self.game_content_surface.blit(quit_text, quit_text.get_rect(
@@ -634,51 +680,27 @@ class Game:
                 self.game_content_surface.blit(restart_text, restart_text.get_rect(
                     center=(center_pos[0], center_pos[1] + 50)))
 
-        # --- Final Composition to Display ---
-        display_w, display_h = self.display_surface.get_size()
+        # 3. Final Composition to Display Surface
         self.display_surface.fill(BLACK)
 
-        # Scale to Fit
-        # If Fullscreen or Wide, maintain aspect ratio
-        target_h = display_h
-        scale = target_h / self.game_content_height
-        target_w = int(SCREEN_WIDTH * scale)
+        # Get layout metrics
+        scale, offset_x, offset_y, target_w, target_h, is_wide = self.get_layout_metrics()
 
-        # Limit width if it's too wide (keep sidebars for logs if we had them, or just centering)
-        # Emulating original logic which put logs on the right for wide screens
-        is_wide = (display_w / display_h > 1.2) or self.is_fullscreen
+        # Scale and Blit Game Content
+        scaled_surf = pygame.transform.scale(
+            self.game_content_surface, (target_w, target_h))
+        self.display_surface.blit(scaled_surf, (offset_x, offset_y))
 
+        # 4. Logs (Sidebar)
         if is_wide:
-            if target_w > display_w * 0.7:
-                scale = (display_w * 0.7) / SCREEN_WIDTH
-                target_w = int(SCREEN_WIDTH * scale)
-                target_h = int(self.game_content_height * scale)
-
-            game_x = (display_w * 0.7 - target_w) // 2
-            if game_x < 0:
-                game_x = 0
-            game_y = (display_h - target_h) // 2
-
-            scaled_surf = pygame.transform.scale(
-                self.game_content_surface, (target_w, target_h))
-            self.display_surface.blit(scaled_surf, (game_x, game_y))
-
-            # Logs Panel on Right
-            self.draw_logs_panel(int(display_w * 0.7), 0,
-                                 int(display_w * 0.3), display_h)
-
-        else:
-            # Center fit
-            scale = min(display_w / SCREEN_WIDTH,
-                        display_h / self.game_content_height)
-            new_w = int(SCREEN_WIDTH * scale)
-            new_h = int(self.game_content_height * scale)
-
-            scaled_surf = pygame.transform.scale(
-                self.game_content_surface, (new_w, new_h))
-            game_x = (display_w - new_w) // 2
-            game_y = (display_h - new_h) // 2
-            self.display_surface.blit(scaled_surf, (game_x, game_y))
+            display_w, display_h = self.display_surface.get_size()
+            # Draw panel to the right of the game
+            # Panel X starts at offset_x + target_w + constant gap? or just right side
+            # Logic from metrics: available available_w was 0.7 * display_w
+            # So sidebar starts at 0.7 * display_w
+            panel_x = int(display_w * 0.7)
+            panel_w = int(display_w * 0.3)
+            self.draw_logs_panel(panel_x, 0, panel_w, display_h)
 
     def draw_logs_panel(self, x, y, width, height):
         # Background
