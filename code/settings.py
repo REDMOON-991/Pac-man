@@ -31,6 +31,28 @@ GAME_OVER_FONT = pygame.font.Font(None, 64)
 WIN_FONT = pygame.font.Font(None, 64)
 LOG_FONT = pygame.font.Font(None, 20)
 
+# --- High Score System ---
+HIGH_SCORE_FILE = "high_score.txt"
+
+
+def load_high_score():
+    try:
+        with open(HIGH_SCORE_FILE, "r") as f:
+            return int(f.read())
+    except:
+        return 0
+
+
+def save_high_score(score):
+    try:
+        with open(HIGH_SCORE_FILE, "w") as f:
+            f.write(str(int(score)))
+    except:
+        pass
+
+
+high_score = load_high_score()
+
 # * 運作常數
 
 # 時間與速度常數

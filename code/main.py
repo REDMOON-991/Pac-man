@@ -303,9 +303,9 @@ while running:
                 init_level(new_level=False)
                 game_state = GAME_STATE_READY
                 ready_animation_start_time = pygame.time.get_ticks()
-            else:
                 game_state = GAME_STATE_GAME_OVER
                 log_message("Game Over.", RED)
+                save_high_score(high_score)  # 存檔
 
     if game_state == GAME_STATE_PLAYING:
 
@@ -368,10 +368,14 @@ while running:
                     GAME_MAP[py][px] = TILE_EMPTY
                     total_pellets -= 1
                     player.score += PELLELETS_POINT
+                    if player.score > high_score:
+                        high_score = player.score
 
                 elif player_event == EVENT_ATE_POWER_PELLET:
                     GAME_MAP[py][px] = TILE_EMPTY
                     player.score += POWER_PELLET_POINT
+                    if player.score > high_score:
+                        high_score = player.score
                     frightened_mode = True
                     frightened_start_time = pygame.time.get_ticks()
                     log_message("Power Pellet eaten! Ghosts Frightened!", CYAN)
@@ -382,6 +386,7 @@ while running:
         if total_pellets <= 0:
             game_state = GAME_STATE_WIN
             log_message("VICTORY! All pellets cleared!", GREEN)
+            save_high_score(high_score)
 
         # 碰撞偵測
         for ghost in ghosts:
@@ -396,6 +401,8 @@ while running:
                     # 吃鬼
                     ghost.eat()
                     player.score += GHOST_POINT
+                    if player.score > high_score:
+                        high_score = player.score
                 elif not ghost.is_eaten:    # 防止玩家碰到已經被吃掉，正在跑回重生的鬼時誤觸發遊戲結束
                     # 被鬼抓
                     log_message("Ghost collision!", RED)
@@ -458,6 +465,10 @@ while running:
         score_text = SCORE_FONT.render(
             f"SCORE: {int(player.score)}", True, WHITE)
         game_content_surface.blit(score_text, (10, 10))
+
+        # High Score
+        hs_text = SCORE_FONT.render(f"HIGH: {int(high_score)}", True, YELLOW)
+        game_content_surface.blit(hs_text, (SCREEN_WIDTH // 2 - 40, 10))
 
         # 生命值畫在右上角
         lives_text = SCORE_FONT.render("LIVES:", True, WHITE)
