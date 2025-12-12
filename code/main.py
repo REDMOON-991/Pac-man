@@ -213,6 +213,20 @@ while running:
                     reset_game()
 
     # 遊戲邏輯更新
+    if game_state == GAME_STATE_DEATH:
+        # 播放死亡動畫
+        anim_done = player.update_death_anim()
+        if anim_done:
+            player.lives -= 1
+            if player.lives > 0:
+                log_message(f"Lives: {player.lives}, Resetting...")
+                init_level(new_level=False)
+                game_state = GAME_STATE_READY
+                ready_animation_start_time = pygame.time.get_ticks()
+            else:
+                game_state = GAME_STATE_GAME_OVER
+                log_message("Game Over.")
+
     if game_state == GAME_STATE_PLAYING:
 
         current_time = pygame.time.get_ticks()
@@ -300,8 +314,9 @@ while running:
                     player.score += GHOST_POINT
                 elif not ghost.is_eaten:    # 防止玩家碰到已經被吃掉，正在跑回重生的鬼時誤觸發遊戲結束
                     # 被鬼抓
-                    game_state = GAME_STATE_GAME_OVER
-                    log_message("Ghost collision! Game Over.")
+                    log_message("Ghost collision!")
+                    game_state = GAME_STATE_DEATH
+                    player.start_death_anim()
 
     # 畫面繪製
     screen.fill(BLACK)
@@ -323,9 +338,14 @@ while running:
         # 使用新的繪圖函式 (內部有 cache)
         draw_map()
 
-        player.draw(screen)
-        for ghost in ghosts:
-            ghost.draw(screen)
+        # 正常狀態下繪製玩家
+        if game_state != GAME_STATE_DEATH:
+            player.draw(screen)
+
+        # 只有在非死亡狀態才繪製鬼魂
+        if game_state != GAME_STATE_DEATH:
+            for ghost in ghosts:
+                ghost.draw(screen)
 
         draw_logs(screen)
 
@@ -382,6 +402,10 @@ while running:
                 last_mode_switch_time = pygame.time.get_ticks()
                 log_message(
                     f"Level {current_level} Start! Algo: {selected_algorithm}")
+
+        elif game_state == GAME_STATE_DEATH:
+            # 死亡動畫狀態，只畫地圖和正在變化的 player
+            player.draw(screen)
 
         elif game_state == GAME_STATE_GAME_OVER:
             text = GAME_OVER_FONT.render("GAME OVER", True, RED)

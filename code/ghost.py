@@ -45,18 +45,71 @@ class Ghost(Entity):
 
     def draw(self, surface):
         if self.is_eaten:
-            eye_radius = self.radius // 2
-            eye_offset = self.radius // 3
-            pygame.draw.circle(
-                surface, WHITE, (int(self.pixel_x - eye_offset), int(self.pixel_y)), eye_radius)
-            pygame.draw.circle(
-                surface, WHITE, (int(self.pixel_x + eye_offset), int(self.pixel_y)), eye_radius)
+            # 只畫眼睛
+            self._draw_eyes(surface)
         else:
-            draw_color = self.color
-            if self.is_frightened:
-                draw_color = FRIGHTENED_BLUE
-            pygame.draw.circle(surface, draw_color,
-                               (int(self.pixel_x), int(self.pixel_y)), self.radius)
+            # 1. 畫身體 (上半圓 + 下半方)
+            draw_color = FRIGHTENED_BLUE if self.is_frightened else self.color
+
+            center = (int(self.pixel_x), int(self.pixel_y))
+
+            # 頭部
+            pygame.draw.circle(surface, draw_color, center, self.radius)
+
+            # 身體底部 (矩形向下延伸)
+            rect_top = center[1]
+            rect_h = self.radius
+            rect_w = self.radius * 2
+            body_rect = pygame.Rect(
+                center[0] - self.radius, rect_top, rect_w, rect_h)
+            pygame.draw.rect(surface, draw_color, body_rect)
+
+            # 腳 (波浪) - 簡單畫三個小圓當腳
+            leg_radius = self.radius // 3
+            for i in range(3):
+                lx = center[0] - self.radius + \
+                    (i * 2 * leg_radius) + leg_radius
+                ly = center[1] + self.radius
+
+                # 簡單動畫: 根據 pixel_x 做一點起伏
+                offset = math.sin(pygame.time.get_ticks() * 0.01 + i) * 2
+                pygame.draw.circle(surface, draw_color,
+                                   (int(lx), int(ly + offset)), leg_radius)
+
+            # 2. 畫眼睛 (如果不是驚嚇模式)
+            if not self.is_frightened:
+                self._draw_eyes(surface)
+            else:
+                # 驚嚇模式畫嘴巴或簡單的驚恐眼
+                # 這裡簡單畫驚嚇眼 (小方塊)
+                pygame.draw.rect(surface, (255, 200, 200),
+                                 (center[0]-4, center[1]-2, 2, 2))
+                pygame.draw.rect(surface, (255, 200, 200),
+                                 (center[0]+2, center[1]-2, 2, 2))
+
+    def _draw_eyes(self, surface):
+        """ 繪製眼睛與眼珠 (Helper) """
+        center = (int(self.pixel_x), int(self.pixel_y))
+        eye_radius = 4
+        pupil_radius = 2
+        eye_offset_x = 4
+        eye_offset_y = -2
+
+        # 眼珠偏移量 (看方向)
+        look_x = self.direction[0] * 2
+        look_y = self.direction[1] * 2
+
+        # 左眼
+        left_eye_pos = (center[0] - eye_offset_x, center[1] + eye_offset_y)
+        pygame.draw.circle(surface, WHITE, left_eye_pos, eye_radius)
+        pygame.draw.circle(surface, BLUE, (int(
+            left_eye_pos[0] + look_x), int(left_eye_pos[1] + look_y)), pupil_radius)
+
+        # 右眼
+        right_eye_pos = (center[0] + eye_offset_x, center[1] + eye_offset_y)
+        pygame.draw.circle(surface, WHITE, right_eye_pos, eye_radius)
+        pygame.draw.circle(surface, BLUE, (int(
+            right_eye_pos[0] + look_x), int(right_eye_pos[1] + look_y)), pupil_radius)
 
     def eat(self):
         if self.on_log:

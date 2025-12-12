@@ -2,8 +2,6 @@
 import pygame
 from settings import *
 from entity import Entity
-
-
 import math
 
 
@@ -21,7 +19,37 @@ class Player(Entity):
         self.mouth_opening = True  # 是否正在張開
         self.rotation_angle = 0  # 身體旋轉角度
 
+        # 死亡動畫變數
+        self.is_dying = False
+        self.death_anim_angle = 0
+        self.death_anim_scale = 1.0
+
+    def start_death_anim(self):
+        self.is_dying = True
+        self.death_anim_angle = 0
+        self.death_anim_scale = 1.0
+
+    def update_death_anim(self):
+        """ 更新死亡動畫: 旋轉並縮小 """
+        if self.is_dying:
+            self.death_anim_angle += 10
+            self.death_anim_scale -= 0.02
+            if self.death_anim_scale < 0:
+                self.death_anim_scale = 0
+                return True  # 動畫結束
+        return False
+
     def draw(self, surface):
+        if self.is_dying:
+            # 死亡動畫繪製: 旋轉 + 縮小
+            current_radius = int(self.radius * self.death_anim_scale)
+            if current_radius > 0:
+                center = (int(self.pixel_x), int(self.pixel_y))
+                # 繪製簡單的黃色圓形，隨scale變小
+                pygame.draw.circle(surface, YELLOW, center, current_radius)
+                # 可以加個叉叉眼或其他效果，這裡先做簡單的縮小消失
+            return
+
         # 計算嘴巴角度
         start_angle = self.rotation_angle + self.current_mouth_angle
         end_angle = self.rotation_angle + 360 - self.current_mouth_angle
