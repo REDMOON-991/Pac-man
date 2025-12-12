@@ -6,8 +6,8 @@ import math
 
 
 class Player(Entity):
-    def __init__(self, grid_x, grid_y):
-        super().__init__(grid_x, grid_y, SPEED)
+    def __init__(self, grid_x, grid_y, speed=SPEED):
+        super().__init__(grid_x, grid_y, speed)
         self.radius = TILE_SIZE // 2 - 2
         self.next_direction = (0, 0)
         self.score = 0

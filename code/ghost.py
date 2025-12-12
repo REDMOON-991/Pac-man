@@ -8,9 +8,9 @@ from queue import PriorityQueue
 
 
 class Ghost(Entity):
-    def __init__(self, grid_x, grid_y, color, ai_mode, scatter_point=None, in_house=False, delay=0, on_log=None, algorithm=ALGO_ASTAR):
-        # 初始化 Entity (SPEED 為預設速度)
-        super().__init__(grid_x, grid_y, SPEED)
+    def __init__(self, grid_x, grid_y, color, ai_mode, speed=SPEED, scatter_point=None, in_house=False, delay=0, on_log=None, algorithm=ALGO_ASTAR):
+        # 初始化 Entity
+        super().__init__(grid_x, grid_y, speed)
 
         self.home_pos = (grid_x, grid_y)
         self.radius = TILE_SIZE // 2 - 2
@@ -43,13 +43,16 @@ class Ghost(Entity):
         self.is_eaten = False
         self.on_log = on_log
 
-    def draw(self, surface):
+    def draw(self, surface, flash_white=False):
         if self.is_eaten:
             # 只畫眼睛
             self._draw_eyes(surface)
         else:
             # 1. 畫身體 (上半圓 + 下半方)
-            draw_color = FRIGHTENED_BLUE if self.is_frightened else self.color
+            if self.is_frightened:
+                draw_color = WHITE if flash_white else FRIGHTENED_BLUE
+            else:
+                draw_color = self.color
 
             center = (int(self.pixel_x), int(self.pixel_y))
 

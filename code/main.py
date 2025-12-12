@@ -142,6 +142,25 @@ def draw_map():
                 pygame.draw.circle(game_content_surface, WHITE,
                                    (center_x, center_y), 6)
 
+    # 3. 繪製水果
+    if fruit_active:
+        fx = fruit_pos[0] * TILE_SIZE + 10
+        fy = fruit_pos[1] * TILE_SIZE + 10
+        # 畫櫻桃 (兩個紅圓 + 綠梗)
+        pygame.draw.circle(game_content_surface, RED, (fx - 4, fy + 2), 5)
+        pygame.draw.circle(game_content_surface, RED, (fx + 4, fy + 6), 5)
+        # 梗
+        pygame.draw.line(game_content_surface, GREEN,
+                         (fx - 4, fy + 2), (fx, fy - 6), 2)
+        pygame.draw.line(game_content_surface, GREEN,
+                         (fx + 4, fy + 6), (fx, fy - 6), 2)
+
+        # 繪製倒數計時 (顯示在水果上方)
+        elapsed = pygame.time.get_ticks() - fruit_spawn_time
+        remaining_sec = max(0, 10 - elapsed // 1000)
+        timer_text = LOG_FONT.render(f"{remaining_sec}s", True, WHITE)
+        game_content_surface.blit(timer_text, (fx - 10, fy - 25))
+
 
 player_lives = MAX_LIVES
 current_level = 1
@@ -158,8 +177,19 @@ global_ghost_mode = MODE_SCATTER
 frightened_mode = False
 frightened_start_time = 0
 global_ghost_mode = MODE_SCATTER
+global_ghost_mode = MODE_SCATTER
 last_mode_switch_time = 0
-ready_animation_start_time = 0  # Ready 動畫開始時間
+ready_animation_start_time = 0
+level_frightened_duration = FRIGHTENED_DURATION  # 當前關卡的受驚持續時間
+
+# --- 水果機制 (Bonus Fruit) ---
+fruit_active = False
+fruit_spawn_time = 0
+fruit_score = 100
+fruit_pos = (14, 29)  # 改到下方空地 (Row 29 is pellets)
+starting_pellets = 0
+fruits_spawned = 0  # 紀錄該關卡已生成水果次數 (避免重複生成)
+initial_log_shown = False  # 紀錄是否已顯示初始模式提示
 
 path_blinky = [(26, 1), (26, 5), (21, 5), (21, 1)]
 path_pinky = [(1, 1), (1, 5), (6, 5), (6, 1)]
@@ -169,7 +199,7 @@ path_clyde = [(1, 29), (1, 26), (6, 26), (6, 29)]
 
 def init_level(new_level=False):
     """ 重置遊戲所有狀態，回到初始畫面 """
-    global player, ghosts, total_pellets, game_state, frightened_mode, global_ghost_mode, last_mode_switch_time, GAME_MAP, game_logs, frightened_start_time
+    global player, ghosts, total_pellets, game_state, frightened_mode, global_ghost_mode, last_mode_switch_time, GAME_MAP, game_logs, frightened_start_time, level_frightened_duration, fruit_active, starting_pellets, fruits_spawned, initial_log_shown
 
     # 1. 重置地圖 (必須重新從 settings.MAP_STRINGS 生成，因為原本的被吃掉了)
     # 注意：這裡我們使用 [:] 來原地修改列表內容，確保傳參參照正確
@@ -179,26 +209,49 @@ def init_level(new_level=False):
         generate_background()  # 重現地圖時，重繪背景
         log_message(f"--- Level {current_level} Started ---", YELLOW)
 
+    # --- 難度調整 (Difficulty Progression) ---
+    # 速度: 每關 +5% (Base: SPEED=2) -> Level 10: 3.0
+    speed_bonus = (current_level - 1) * 0.1
+    level_speed = min(SPEED + speed_bonus, 5.0)  # 上限 5
+
+    # 受驚時間: 每關 -0.5秒 (Base: 7000) -> Min: 2000
+    duration_reduction = (current_level - 1) * 500
+    level_frightened_duration = max(
+        FRIGHTENED_DURATION - duration_reduction, 2000)
+
+    if new_level:
+        log_message(
+            f"Diffculty Up! Speed: {level_speed:.1f}, Fright: {level_frightened_duration/1000}s", CYAN)
+        # 計算總豆子
+        total_pellets = sum(row.count(TILE_PELLET) for row in GAME_MAP)
+        starting_pellets = total_pellets
+        fruits_spawned = 0
+        fruit_active = False
+        initial_log_shown = False  # 重置 Log 提示標記
+        log_message(f"Total pellets: {total_pellets}", WHITE)
+
     old_score = 0
     old_lives = MAX_LIVES
 
     if player:
+        # 這裡很關鍵：如果是死掉重來 (new_level=False)，要繼承生命與分數
         old_score = player.score
-        old_lives = player.lives  # 保留生命
+        old_lives = player.lives
+        # log_message(f"DEBUG: Inherited Lives: {old_lives}", GREY)
 
-    player = Player(14, 23)  # 使用整數座標確保初始對齊 (14, 23)
+    player = Player(14, 23, speed=level_speed)  # 使用整數座標確保初始對齊 (14, 23)
     player.score = old_score
     player.lives = old_lives
 
     # 3. 重置鬼魂 (建立新的物件以重置位置和狀態)
     blinky = Ghost(13, 14, RED, ai_mode=AI_CHASE_BLINKY,
-                   scatter_point=path_blinky, in_house=True, delay=0, on_log=log_message, algorithm=selected_algorithm)
+                   scatter_point=path_blinky, in_house=True, delay=0, on_log=log_message, algorithm=selected_algorithm, speed=level_speed)
     pinky = Ghost(14, 14, PINK, ai_mode=AI_CHASE_PINKY,
-                  scatter_point=path_pinky, in_house=True, delay=3000, on_log=log_message, algorithm=selected_algorithm)
+                  scatter_point=path_pinky, in_house=True, delay=3000, on_log=log_message, algorithm=selected_algorithm, speed=level_speed)
     inky = Ghost(12, 14, CYAN, ai_mode=AI_CHASE_INKY, scatter_point=path_inky,
-                 in_house=True, delay=6000, on_log=log_message, algorithm=selected_algorithm)
+                 in_house=True, delay=6000, on_log=log_message, algorithm=selected_algorithm, speed=level_speed)
     clyde = Ghost(15, 14, ORANGE, ai_mode=AI_CHASE_CLYDE,
-                  scatter_point=path_clyde, in_house=True, delay=9000, on_log=log_message, algorithm=selected_algorithm)
+                  scatter_point=path_clyde, in_house=True, delay=9000, on_log=log_message, algorithm=selected_algorithm, speed=level_speed)
 
     # 更新全域的 ghosts 列表
     ghosts[:] = [blinky, pinky, inky, clyde]
@@ -209,11 +262,52 @@ def init_level(new_level=False):
 
 
 def reset_game():
-    global player_lives, current_level, game_state
+    global player_lives, current_level, game_state, player
     player_lives = MAX_LIVES
     current_level = 1
     game_state = GAME_STATE_MENU
+    player = None  # 清除舊玩家物件，確保分數重置
     log_message("Game Reset to Menu", YELLOW)
+
+
+def draw_menu_ui(surface):
+    """ 繪製選單與按鈕 """
+    # 標題
+    title_surf = WIN_FONT.render("PAC-MAN AI", True, YELLOW)
+    surface.blit(title_surf, (SCREEN_WIDTH // 2 -
+                 title_surf.get_width() // 2, 100))
+
+    subtitle = SCORE_FONT.render("Select Algorithm to Start:", True, WHITE)
+    surface.blit(subtitle, (SCREEN_WIDTH // 2 -
+                 subtitle.get_width() // 2, 180))
+
+    # 按鈕定義 (全域也可以，方便點擊檢測，這裡先簡單定義並畫出)
+    btn_w, btn_h = 200, 50
+    center_x = SCREEN_WIDTH // 2 - btn_w // 2
+
+    # 按鈕列表 (Label, ActionKey, Y-pos, Color)
+    buttons = [
+        ("1. GREEDY", ALGO_GREEDY, 250, CYAN),
+        ("2. BFS", ALGO_BFS, 320, ORANGE),
+        ("3. A* (A-Star)", ALGO_ASTAR, 390, PINK)
+    ]
+
+    # 存回全域以便 Click 偵測 (簡單做法：每次重算或存成全域)
+    # 這裡我們將 buttons 區域存入 menu_buttons 列表
+    global menu_buttons
+    menu_buttons = []
+
+    for label, algo, y, color in buttons:
+        rect = pygame.Rect(center_x, y, btn_w, btn_h)
+        pygame.draw.rect(surface, color, rect, 2)
+
+        # 簡單的 Hover 效果 (如果需要可以加，這裡先略過)
+
+        text = SCORE_FONT.render(label, True, color)
+        surface.blit(text, (rect.centerx - text.get_width() //
+                     2, rect.centery - text.get_height() // 2))
+
+        menu_buttons.append((rect, algo))
 
 
 # 計算總豆子數 (勝利條件)
@@ -225,6 +319,8 @@ log_message("Press ARROW KEYS to start...", YELLOW)
 
 # * 主迴圈開始
 is_fullscreen = False
+menu_buttons = []  # 用來存儲選單按鈕區域
+
 while running:
     dt = clock.tick(60)  # dt is milliseconds
 
@@ -244,6 +340,55 @@ while running:
                         (WINDOW_WIDTH, WINDOW_HEIGHT), pygame.RESIZABLE)
 
         if game_state == GAME_STATE_MENU:
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1:  # 左鍵
+                    mx, my = pygame.mouse.get_pos()
+                    # 檢測是否點擊按鈕
+                    # 注意：menu_buttons 的座標是基於 display_surface 的嗎？
+                    # 這裡 `draw_menu_ui` 是畫在 `game_content_surface` 還是 `display_surface`?
+                    # 假設我們將在 drawing 階段畫在 `game_content_surface` (縮放前)
+                    # 那滑鼠座標需要轉換。
+                    # 為了簡單，我們把 Menu 畫在 `display_surface` 上 (不縮放)，或者處理縮放。
+                    # 為了保持一致性，建議畫在 `display_surface` 的居中位置，或者 `game_content_surface`。
+                    #
+                    # 策略：因為有響應式佈局，滑鼠座標轉換較麻煩。
+                    # 簡單解法：Menu 狀態下，直接在 `display_surface` 畫 UI。
+                    # 而 `draw_menu_ui` 使用絕對座標 (SCREEN_WIDTH 可能太小？)
+                    # 我們的 `draw_menu_ui` 若使用 `SCREEN_WIDTH`，那就是基於遊戲解析度的。
+                    # 如果 display 有縮放，滑鼠座標 (`event.pos`) 是螢幕座標。
+                    # 需要反推。
+                    #
+                    # 更簡單的解法：Mouse Over 檢測使用 "螢幕座標" 繪製按鈕，或者將滑鼠座標轉為遊戲座標。
+                    # 這裡選擇：將滑鼠座標轉為遊戲座標比較正確，但因為有 Aspect Ratio Scaling (黑邊)，比較複雜。
+                    #
+                    # 替代方案：Menu 頁面不使用縮放畫布？或者直接全螢幕繪製？
+                    # 讓我們更新 `display_surface` 的取得：
+
+                    # 獲取實際顯示區域
+                    if is_fullscreen:
+                        display_w, display_h = display_surface.get_size()
+                    else:
+                        display_w, display_h = WINDOW_WIDTH, WINDOW_HEIGHT
+
+                    # 我們這裡暫時假設按鈕畫在 `game_content_surface` 上
+                    # 需要計算縮放比例
+                    scale = min(display_w / SCREEN_WIDTH,
+                                display_h / GAME_CONTENT_HEIGHT)
+                    new_w = int(SCREEN_WIDTH * scale)
+                    new_h = int(GAME_CONTENT_HEIGHT * scale)
+                    offset_x = (display_w - new_w) // 2
+                    offset_y = (display_h - new_h) // 2
+
+                    if menu_buttons:
+                        game_x = (mx - offset_x) / scale
+                        game_y = (my - offset_y) / scale
+
+                        for rect, algo in menu_buttons:
+                            if rect.collidepoint(game_x, game_y):
+                                selected_algorithm = algo
+                                game_state = GAME_STATE_START
+                                init_level(new_level=True)
+
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_1:
                     selected_algorithm = ALGO_GREEDY
@@ -305,6 +450,7 @@ while running:
             else:
                 game_state = GAME_STATE_GAME_OVER
                 log_message("Game Over.", RED)
+                save_high_score(high_score)  # 存檔
 
     if game_state == GAME_STATE_PLAYING:
 
@@ -314,8 +460,10 @@ while running:
             time_passed = current_time - last_mode_switch_time
 
             # 確保初始提示
-            if last_mode_switch_time == 0 and time_passed > 100:  # 稍微延遲一點確保顯示
+            # 確保初始提示 (使用 flag)
+            if not initial_log_shown and time_passed > 100:
                 log_message(f">> Init Mode: {global_ghost_mode}", YELLOW)
+                initial_log_shown = True  # 標記已顯示
 
             if global_ghost_mode == MODE_SCATTER and time_passed > SCATTER_DURATION:
                 global_ghost_mode = MODE_CHASE
@@ -345,7 +493,7 @@ while running:
 
         # Frightened (受驚) 模式計時器
         if frightened_mode:
-            if current_time - frightened_start_time > FRIGHTENED_DURATION:
+            if current_time - frightened_start_time > level_frightened_duration:
                 frightened_mode = False
                 log_message("Frightened mode ended. Ghosts normal.", WHITE)
                 for ghost in ghosts:
@@ -367,20 +515,62 @@ while running:
                     GAME_MAP[py][px] = TILE_EMPTY
                     total_pellets -= 1
                     player.score += PELLELETS_POINT
+                    if player.score > high_score:
+                        high_score = player.score
 
                 elif player_event == EVENT_ATE_POWER_PELLET:
                     GAME_MAP[py][px] = TILE_EMPTY
                     player.score += POWER_PELLET_POINT
+                    if player.score > high_score:
+                        high_score = player.score
                     frightened_mode = True
                     frightened_start_time = pygame.time.get_ticks()
                     log_message("Power Pellet eaten! Ghosts Frightened!", CYAN)
                     for ghost in ghosts:
                         ghost.start_frightened()
 
+            # --- 水果生成邏輯 ---
+            # 當吃到 1/3 (70顆) 或 2/3 (170顆) 時生成
+            pellets_eaten = starting_pellets - total_pellets
+            if not fruit_active and fruits_spawned < 2:
+                # 簡單判定：這裡用固定餘數或區間檢查
+                # 例如吃掉 70 和 170 顆時
+                should_spawn = False
+                if fruits_spawned == 0 and pellets_eaten >= 70:
+                    should_spawn = True
+                elif fruits_spawned == 1 and pellets_eaten >= 170:
+                    should_spawn = True
+
+                if should_spawn:
+                    fruit_active = True
+                    fruit_spawn_time = pygame.time.get_ticks()
+                    fruits_spawned += 1
+                    fruit_score = 100 * current_level
+                    log_message(
+                        f"Bonus Fruit Appeared! ({fruit_score} pts)", PINK)
+
+            # 水果消失計時 (10秒)
+            if fruit_active:
+                if pygame.time.get_ticks() - fruit_spawn_time > 10000:
+                    fruit_active = False
+                    log_message("Fruit disappeared...", GREY)
+                else:
+                    # 檢查吃水果 (簡單距離判定)
+                    fx, fy = fruit_pos[0] * TILE_SIZE + \
+                        TILE_SIZE//2, fruit_pos[1] * TILE_SIZE + TILE_SIZE//2
+                    dist = math.hypot(player.pixel_x - fx, player.pixel_y - fy)
+                    if dist < player.radius + 15:  # 加大判定範圍
+                        fruit_active = False
+                        player.score += fruit_score
+                        if player.score > high_score:
+                            high_score = player.score
+                        log_message(f"Yummy! Bonus Fruit: {fruit_score}", PINK)
+
         # 勝利檢查
         if total_pellets <= 0:
             game_state = GAME_STATE_WIN
             log_message("VICTORY! All pellets cleared!", GREEN)
+            save_high_score(high_score)
 
         # 碰撞偵測
         for ghost in ghosts:
@@ -395,6 +585,8 @@ while running:
                     # 吃鬼
                     ghost.eat()
                     player.score += GHOST_POINT
+                    if player.score > high_score:
+                        high_score = player.score
                 elif not ghost.is_eaten:    # 防止玩家碰到已經被吃掉，正在跑回重生的鬼時誤觸發遊戲結束
                     # 被鬼抓
                     log_message("Ghost collision!", RED)
@@ -430,8 +622,17 @@ while running:
             player.draw(game_content_surface)
 
         if game_state != GAME_STATE_DEATH:
+            # 計算是否需要閃爍 (驚嚇模式最後 2 秒)
+            flash_white = False
+            if frightened_mode:
+                elapsed = pygame.time.get_ticks() - frightened_start_time
+                remaining = level_frightened_duration - elapsed
+                if remaining < 2000:
+                    # 每 200ms 切換一次
+                    flash_white = (pygame.time.get_ticks() // 200) % 2 == 0
+
             for ghost in ghosts:
-                ghost.draw(game_content_surface)
+                ghost.draw(game_content_surface, flash_white=flash_white)
 
         # 移除 draw_logs()，改在最後 Layout 階段繪製
 
@@ -448,6 +649,10 @@ while running:
         score_text = SCORE_FONT.render(
             f"SCORE: {int(player.score)}", True, WHITE)
         game_content_surface.blit(score_text, (10, 10))
+
+        # High Score
+        hs_text = SCORE_FONT.render(f"HIGH: {int(high_score)}", True, YELLOW)
+        game_content_surface.blit(hs_text, (SCREEN_WIDTH // 2 - 40, 10))
 
         # 生命值畫在右上角
         lives_text = SCORE_FONT.render("LIVES:", True, WHITE)
@@ -538,16 +743,34 @@ while running:
             game_content_surface.blit(restart_text, r_rect)
 
     # -------------------------------------------------------------
-    # B. 響應式佈局 (Responsive Layout)
+    # DRAWING & LAYOUT
     # -------------------------------------------------------------
     display_w, display_h = display_surface.get_size()
-    display_surface.fill(BLACK)  # 清空底色
+    display_surface.fill(BLACK)
 
-    # 判斷長寬比
-    aspect_ratio = display_w / display_h
+    if game_state == GAME_STATE_MENU:
+        # 在 Menu 狀態下，我們不需要畫地圖，只畫 UI
+        # 這裡借用 game_content_surface 來畫 (方便座標統一)
+        game_content_surface.fill(BLACK)
+        draw_menu_ui(game_content_surface)
 
-    # 定義佈局閾值 (1.2 表示稍微寬一點的螢幕就切換)
-    if aspect_ratio > 1.2:
+        # 進行縮放輸出 (同下邏輯)
+        display_w, display_h = display_surface.get_size()
+        scale = min(display_w / SCREEN_WIDTH,
+                    display_h / GAME_CONTENT_HEIGHT)
+        new_w = int(SCREEN_WIDTH * scale)
+        new_h = int(GAME_CONTENT_HEIGHT * scale)
+        scaled_game = pygame.transform.scale(
+            game_content_surface, (new_w, new_h))
+        game_x = (display_w - new_w) // 2
+        game_y = (display_h - new_h) // 2
+        display_surface.blit(scaled_game, (game_x, game_y))
+
+        # Menu 頁面不需要右側 Log? 可以畫在下面或不畫。
+        # 這裡簡單畫個 Log 在下面提示
+        # draw_logs_on_surface(display_surface, ...) # Skip for clean menu
+
+    elif is_fullscreen or (display_surface.get_width() / display_surface.get_height() > 1.2):
         # --- 寬螢幕模式 (Wide Mode): 左圖右 Log ---
 
         # 1. 遊戲畫面縮放至螢幕高度 (留一點邊距)
