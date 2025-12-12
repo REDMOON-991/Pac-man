@@ -186,7 +186,7 @@ level_frightened_duration = FRIGHTENED_DURATION  # 當前關卡的受驚持續�
 fruit_active = False
 fruit_spawn_time = 0
 fruit_score = 100
-fruit_pos = (14, 20)  # 改到確定的空地 (原 (14, 17) 可能是牆)
+fruit_pos = (14, 29)  # 改到下方空地 (Row 29 is pellets)
 starting_pellets = 0
 fruits_spawned = 0  # 紀錄該關卡已生成水果次數 (避免重複生成)
 initial_log_shown = False  # 紀錄是否已顯示初始模式提示
@@ -270,6 +270,46 @@ def reset_game():
     log_message("Game Reset to Menu", YELLOW)
 
 
+def draw_menu_ui(surface):
+    """ 繪製選單與按鈕 """
+    # 標題
+    title_surf = WIN_FONT.render("PAC-MAN AI", True, YELLOW)
+    surface.blit(title_surf, (SCREEN_WIDTH // 2 -
+                 title_surf.get_width() // 2, 100))
+
+    subtitle = SCORE_FONT.render("Select Algorithm to Start:", True, WHITE)
+    surface.blit(subtitle, (SCREEN_WIDTH // 2 -
+                 subtitle.get_width() // 2, 180))
+
+    # 按鈕定義 (全域也可以，方便點擊檢測，這裡先簡單定義並畫出)
+    btn_w, btn_h = 200, 50
+    center_x = SCREEN_WIDTH // 2 - btn_w // 2
+
+    # 按鈕列表 (Label, ActionKey, Y-pos, Color)
+    buttons = [
+        ("1. GREEDY", ALGO_GREEDY, 250, CYAN),
+        ("2. BFS", ALGO_BFS, 320, ORANGE),
+        ("3. A* (A-Star)", ALGO_ASTAR, 390, PINK)
+    ]
+
+    # 存回全域以便 Click 偵測 (簡單做法：每次重算或存成全域)
+    # 這裡我們將 buttons 區域存入 menu_buttons 列表
+    global menu_buttons
+    menu_buttons = []
+
+    for label, algo, y, color in buttons:
+        rect = pygame.Rect(center_x, y, btn_w, btn_h)
+        pygame.draw.rect(surface, color, rect, 2)
+
+        # 簡單的 Hover 效果 (如果需要可以加，這裡先略過)
+
+        text = SCORE_FONT.render(label, True, color)
+        surface.blit(text, (rect.centerx - text.get_width() //
+                     2, rect.centery - text.get_height() // 2))
+
+        menu_buttons.append((rect, algo))
+
+
 # 計算總豆子數 (勝利條件)
 total_pellets = sum(row.count(TILE_PELLET) for row in GAME_MAP)
 generate_background()  # 初始生成背景
@@ -279,6 +319,8 @@ log_message("Press ARROW KEYS to start...", YELLOW)
 
 # * 主迴圈開始
 is_fullscreen = False
+menu_buttons = []  # 用來存儲選單按鈕區域
+
 while running:
     dt = clock.tick(60)  # dt is milliseconds
 
@@ -298,6 +340,55 @@ while running:
                         (WINDOW_WIDTH, WINDOW_HEIGHT), pygame.RESIZABLE)
 
         if game_state == GAME_STATE_MENU:
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1:  # 左鍵
+                    mx, my = pygame.mouse.get_pos()
+                    # 檢測是否點擊按鈕
+                    # 注意：menu_buttons 的座標是基於 display_surface 的嗎？
+                    # 這裡 `draw_menu_ui` 是畫在 `game_content_surface` 還是 `display_surface`?
+                    # 假設我們將在 drawing 階段畫在 `game_content_surface` (縮放前)
+                    # 那滑鼠座標需要轉換。
+                    # 為了簡單，我們把 Menu 畫在 `display_surface` 上 (不縮放)，或者處理縮放。
+                    # 為了保持一致性，建議畫在 `display_surface` 的居中位置，或者 `game_content_surface`。
+                    #
+                    # 策略：因為有響應式佈局，滑鼠座標轉換較麻煩。
+                    # 簡單解法：Menu 狀態下，直接在 `display_surface` 畫 UI。
+                    # 而 `draw_menu_ui` 使用絕對座標 (SCREEN_WIDTH 可能太小？)
+                    # 我們的 `draw_menu_ui` 若使用 `SCREEN_WIDTH`，那就是基於遊戲解析度的。
+                    # 如果 display 有縮放，滑鼠座標 (`event.pos`) 是螢幕座標。
+                    # 需要反推。
+                    #
+                    # 更簡單的解法：Mouse Over 檢測使用 "螢幕座標" 繪製按鈕，或者將滑鼠座標轉為遊戲座標。
+                    # 這裡選擇：將滑鼠座標轉為遊戲座標比較正確，但因為有 Aspect Ratio Scaling (黑邊)，比較複雜。
+                    #
+                    # 替代方案：Menu 頁面不使用縮放畫布？或者直接全螢幕繪製？
+                    # 讓我們更新 `display_surface` 的取得：
+
+                    # 獲取實際顯示區域
+                    if is_fullscreen:
+                        display_w, display_h = display_surface.get_size()
+                    else:
+                        display_w, display_h = WINDOW_WIDTH, WINDOW_HEIGHT
+
+                    # 我們這裡暫時假設按鈕畫在 `game_content_surface` 上
+                    # 需要計算縮放比例
+                    scale = min(display_w / SCREEN_WIDTH,
+                                display_h / GAME_CONTENT_HEIGHT)
+                    new_w = int(SCREEN_WIDTH * scale)
+                    new_h = int(GAME_CONTENT_HEIGHT * scale)
+                    offset_x = (display_w - new_w) // 2
+                    offset_y = (display_h - new_h) // 2
+
+                    if menu_buttons:
+                        game_x = (mx - offset_x) / scale
+                        game_y = (my - offset_y) / scale
+
+                        for rect, algo in menu_buttons:
+                            if rect.collidepoint(game_x, game_y):
+                                selected_algorithm = algo
+                                game_state = GAME_STATE_START
+                                init_level(new_level=True)
+
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_1:
                     selected_algorithm = ALGO_GREEDY
@@ -652,16 +743,34 @@ while running:
             game_content_surface.blit(restart_text, r_rect)
 
     # -------------------------------------------------------------
-    # B. 響應式佈局 (Responsive Layout)
+    # DRAWING & LAYOUT
     # -------------------------------------------------------------
     display_w, display_h = display_surface.get_size()
-    display_surface.fill(BLACK)  # 清空底色
+    display_surface.fill(BLACK)
 
-    # 判斷長寬比
-    aspect_ratio = display_w / display_h
+    if game_state == GAME_STATE_MENU:
+        # 在 Menu 狀態下，我們不需要畫地圖，只畫 UI
+        # 這裡借用 game_content_surface 來畫 (方便座標統一)
+        game_content_surface.fill(BLACK)
+        draw_menu_ui(game_content_surface)
 
-    # 定義佈局閾值 (1.2 表示稍微寬一點的螢幕就切換)
-    if aspect_ratio > 1.2:
+        # 進行縮放輸出 (同下邏輯)
+        display_w, display_h = display_surface.get_size()
+        scale = min(display_w / SCREEN_WIDTH,
+                    display_h / GAME_CONTENT_HEIGHT)
+        new_w = int(SCREEN_WIDTH * scale)
+        new_h = int(GAME_CONTENT_HEIGHT * scale)
+        scaled_game = pygame.transform.scale(
+            game_content_surface, (new_w, new_h))
+        game_x = (display_w - new_w) // 2
+        game_y = (display_h - new_h) // 2
+        display_surface.blit(scaled_game, (game_x, game_y))
+
+        # Menu 頁面不需要右側 Log? 可以畫在下面或不畫。
+        # 這裡簡單畫個 Log 在下面提示
+        # draw_logs_on_surface(display_surface, ...) # Skip for clean menu
+
+    elif is_fullscreen or (display_surface.get_width() / display_surface.get_height() > 1.2):
         # --- 寬螢幕模式 (Wide Mode): 左圖右 Log ---
 
         # 1. 遊戲畫面縮放至螢幕高度 (留一點邊距)
