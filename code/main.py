@@ -209,10 +209,11 @@ def init_level(new_level=False):
 
 
 def reset_game():
-    global player_lives, current_level, game_state
+    global player_lives, current_level, game_state, player
     player_lives = MAX_LIVES
     current_level = 1
     game_state = GAME_STATE_MENU
+    player = None  # 清除舊玩家物件，確保分數重置
     log_message("Game Reset to Menu", YELLOW)
 
 
