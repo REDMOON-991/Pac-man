@@ -154,10 +154,6 @@ class Game:
                     cx = x * TILE_SIZE + TILE_SIZE // 2
                     cy = y * TILE_SIZE + TILE_SIZE // 2
 
-                    # Draw a small joint circle at center to smooth connections
-                    pygame.draw.circle(self.background_surface,
-                                       wall_color, (cx, cy), line_width // 2)
-
                     # Check neighbors and draw connections
                     # UP
                     if is_wall_tile(x, y - 1):
