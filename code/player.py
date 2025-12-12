@@ -4,6 +4,9 @@ from settings import *
 from entity import Entity
 
 
+import math
+
+
 class Player(Entity):
     def __init__(self, grid_x, grid_y):
         super().__init__(grid_x, grid_y, SPEED)
@@ -12,9 +15,52 @@ class Player(Entity):
         self.score = 0
         self.lives = MAX_LIVES
 
+        # 動畫變數
+        self.current_mouth_angle = 45  # 嘴巴張開角度 (0~45)
+        self.anim_speed = 5  # 開合速度
+        self.mouth_opening = True  # 是否正在張開
+        self.rotation_angle = 0  # 身體旋轉角度
+
     def draw(self, surface):
-        pygame.draw.circle(
-            surface, YELLOW, (int(self.pixel_x), int(self.pixel_y)), self.radius)
+        # 計算嘴巴角度
+        start_angle = self.rotation_angle + self.current_mouth_angle
+        end_angle = self.rotation_angle + 360 - self.current_mouth_angle
+
+        # Pygame draw.arc 是畫線，畫實心小精靈比較適合用:
+        # 1. 畫滿版黃圓
+        # 2. 畫黑色三角形 (嘴巴) 蓋上去 -> 簡單有效
+
+        # 繪製黃色身體
+        center = (int(self.pixel_x), int(self.pixel_y))
+        pygame.draw.circle(surface, YELLOW, center, self.radius)
+
+        # 計算嘴巴三角形的三個頂點
+        # 頂點 1: 圓心
+        # 頂點 2: 上嘴唇外緣
+        # 頂點 3: 下嘴唇外緣
+
+        # 轉換角度為弧度 (Pygame 座標系: 0度是右邊, 順時針增加? 不, 數學是逆時針, Pygame 是順時針嗎?
+        # Pygame 的 math.cos/sin 通常吃弧度。
+        # 這裡簡單處理：
+        # 0 度 = 右 (1, 0)
+        # 90 度 = 下 (0, 1)
+        # 180 度 = 左 (-1, 0)
+        # 270 度 = 上 (0, -1)
+
+        p2_angle_rad = math.radians(
+            self.rotation_angle + self.current_mouth_angle)
+        p3_angle_rad = math.radians(
+            self.rotation_angle - self.current_mouth_angle)
+
+        p2_x = center[0] + self.radius * math.cos(p2_angle_rad)
+        p2_y = center[1] + self.radius * math.sin(p2_angle_rad)
+
+        p3_x = center[0] + self.radius * math.cos(p3_angle_rad)
+        p3_y = center[1] + self.radius * math.sin(p3_angle_rad)
+
+        # 繪製黑色三角形蓋住嘴巴
+        pygame.draw.polygon(
+            surface, BLACK, [center, (p2_x, p2_y), (p3_x, p3_y)])
 
     def handle_input(self, event):
         if event.type == pygame.KEYDOWN:
@@ -34,6 +80,28 @@ class Player(Entity):
         回傳: 事件字串 (ATE_PELLET, etc) 或 None
         """
         dt_seconds = dt / 1000.0 if dt > 0 else None
+
+        # --- 動畫更新 ---
+        # 只有在移動時才動嘴巴
+        if self.direction != (0, 0):
+            if self.mouth_opening:
+                self.current_mouth_angle += self.anim_speed
+                if self.current_mouth_angle >= 45:
+                    self.mouth_opening = False
+            else:
+                self.current_mouth_angle -= self.anim_speed
+                if self.current_mouth_angle <= 0:
+                    self.mouth_opening = True
+
+            # 更新旋轉角度
+            if self.direction == (1, 0):
+                self.rotation_angle = 0
+            elif self.direction == (0, 1):
+                self.rotation_angle = 90
+            elif self.direction == (-1, 0):
+                self.rotation_angle = 180
+            elif self.direction == (0, -1):
+                self.rotation_angle = 270
 
         # 1. 檢查是否在格子中心 (用於轉彎判定)
         centered = self.is_centered()

@@ -104,7 +104,11 @@ game_state = GAME_STATE_MENU
 frightened_mode = False
 frightened_start_time = 0
 global_ghost_mode = MODE_SCATTER
+frightened_mode = False
+frightened_start_time = 0
+global_ghost_mode = MODE_SCATTER
 last_mode_switch_time = 0
+ready_animation_start_time = 0  # Ready 動畫開始時間
 
 path_blinky = [(26, 1), (26, 5), (21, 5), (21, 1)]
 path_pinky = [(1, 1), (1, 5), (6, 5), (6, 1)]
@@ -195,11 +199,12 @@ while running:
         elif game_state == GAME_STATE_START:
             if event.type == pygame.KEYDOWN:
                 if event.key in [pygame.K_UP, pygame.K_DOWN, pygame.K_LEFT, pygame.K_RIGHT]:
-                    game_state = GAME_STATE_PLAYING
-                    last_mode_switch_time = pygame.time.get_ticks()
-                    log_message(
-                        f"Level {current_level} Start! Algo: {selected_algorithm}")
-                    player.handle_input(event)  # 讓第一下按鍵直接生效
+                    # 按下方向鍵後，先進入 Ready 動畫
+                    game_state = GAME_STATE_READY
+                    ready_animation_start_time = pygame.time.get_ticks()
+
+                    # 預先處理第一下輸入 (讓玩家可以先按住方向鍵)
+                    player.handle_input(event)
         elif game_state == GAME_STATE_PLAYING:
             player.handle_input(event)
         elif game_state in [GAME_STATE_GAME_OVER, GAME_STATE_WIN]:
@@ -328,7 +333,18 @@ while running:
         # True: 開啟 anti-aliasing (反鋸齒)
         score_text = SCORE_FONT.render(
             f"SCORE: {int(player.score)}", True, WHITE)
-        screen.blit(score_text, (10, MAP_HEIGHT - 25))
+        screen.blit(score_text, (10, MAP_HEIGHT + 10))  # 稍微往下移到 Log 區塊上方
+
+        # 繪製生命值 (圖示)
+        lives_text = SCORE_FONT.render("LIVES:", True, WHITE)
+        screen.blit(lives_text, (SCREEN_WIDTH - 150, MAP_HEIGHT + 10))
+        for i in range(player.lives):
+            # 畫黃色小圓代表生命
+            cx = SCREEN_WIDTH - 90 + i * 25
+            cy = MAP_HEIGHT + 18
+            pygame.draw.circle(screen, YELLOW, (cx, cy), 8)
+            # 簡單畫個嘴巴缺口 (用黑線蓋掉) - 或是之後用 Sprite
+            # 这里先画简单的
 
         # 繪製中心文字 (開始、勝利、失敗)
         center_pos = (SCREEN_WIDTH // 2, MAP_HEIGHT // 2)
@@ -346,6 +362,26 @@ while running:
             # Reset Player Position visual bug fix (ensure it draws correctly on start)
             if player:
                 player.draw(screen)
+
+        elif game_state == GAME_STATE_READY:
+            # Ready -> GO 動畫
+            current_ticks = pygame.time.get_ticks()
+            elapsed = current_ticks - ready_animation_start_time
+
+            if elapsed < 2000:  # 前 2 秒顯示 READY
+                ready_text = WIN_FONT.render("READY!", True, YELLOW)
+                rr = ready_text.get_rect(center=center_pos)
+                screen.blit(ready_text, rr)
+            elif elapsed < 3000:  # 第 2-3 秒顯示 GO!
+                go_text = WIN_FONT.render("GO!", True, GREEN)  # 使用綠色
+                gr = go_text.get_rect(center=center_pos)
+                screen.blit(go_text, gr)
+            else:
+                # 時間到，正式開始
+                game_state = GAME_STATE_PLAYING
+                last_mode_switch_time = pygame.time.get_ticks()
+                log_message(
+                    f"Level {current_level} Start! Algo: {selected_algorithm}")
 
         elif game_state == GAME_STATE_GAME_OVER:
             text = GAME_OVER_FONT.render("GAME OVER", True, RED)

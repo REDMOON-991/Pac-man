@@ -21,6 +21,7 @@ CYAN = (0, 255, 255)
 ORANGE = (255, 184, 82)
 GREY = (150, 150, 150)
 FRIGHTENED_BLUE = (0, 0, 139)
+GREEN = (0, 255, 0)
 
 # 字型設定
 # 初始化字型模組
@@ -55,6 +56,7 @@ GAME_STATE_START = "START"
 GAME_STATE_PLAYING = "PLAYING"
 GAME_STATE_GAME_OVER = "GAME_OVER"
 GAME_STATE_WIN = "WIN"
+GAME_STATE_READY = "READY_ANIMATION"  # 新增 Ready 動畫狀態
 
 # 鬼魂全域/行為模式 (Ghost AI Modes)
 # 鬼演算法
